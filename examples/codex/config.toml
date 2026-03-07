@@ -1,0 +1,14 @@
+personality = "pragmatic"
+model = "gpt-5.4"
+model_reasoning_effort = "medium"
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[shell_environment_policy]
+include_only = ["PATH", "HOME", "HTTP_PROXY", "HTTPS_PROXY", "DOCKER_HOST"]
+
+[projects."/workspace"]
+trust_level = "trusted"
+
+[notice]
+hide_full_access_warning = true
