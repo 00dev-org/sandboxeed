@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"errors"
@@ -56,7 +57,7 @@ type SandboxConfig struct {
 	Environment []string `yaml:"environment"`
 	WorkingDir  string   `yaml:"working_dir"`
 	Domains     []string `yaml:"domains"`
-	Docker      string   `yaml:"docker"`
+	Docker      bool     `yaml:"docker"`
 }
 
 type Config struct {
@@ -80,7 +81,9 @@ func loadConfig() (*Config, error) {
 		return nil, fmt.Errorf("failed to read %s: %w", configFile, err)
 	}
 	var cfg Config
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %w", configFile, err)
 	}
 	return &cfg, nil
@@ -209,7 +212,7 @@ type runResources struct {
 func run() int {
 	build := false
 	command := ""
-	args := []string{}
+	var args []string
 
 	for i := 1; i < len(os.Args); i++ {
 		switch os.Args[i] {
@@ -285,7 +288,7 @@ func run() int {
 		command = "bash"
 	}
 
-	confPath, err := writeSquidConf(dir, cfg.Sandbox.Domains)
+	confPath, err := writeSquidConf(cfg.Sandbox.Domains)
 	if err != nil {
 		stderrf("failed to write squid.conf: %v\n", err)
 		return 1
@@ -300,7 +303,7 @@ func run() int {
 		return 1
 	}
 
-	if cfg.Sandbox.Docker == "enabled" {
+	if cfg.Sandbox.Docker {
 		if err := startDind(rt, resources); err != nil {
 			if ctx.Err() != nil {
 				return 0
@@ -347,13 +350,13 @@ func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, comma
 	volumes = append(volumes, cfg.Sandbox.Volumes...)
 
 	envDefaults := defaultEnvironment
-	if cfg.Sandbox.Docker == "enabled" {
+	if cfg.Sandbox.Docker {
 		envDefaults = defaultDockerEnvironment
 	}
 	environment := make([]string, 0, len(envDefaults)+len(cfg.Sandbox.Environment)+1)
 	environment = append(environment, envDefaults...)
 	environment = append(environment, cfg.Sandbox.Environment...)
-	if cfg.Sandbox.Docker == "enabled" {
+	if cfg.Sandbox.Docker {
 		environment = append(environment, "DOCKER_HOST=tcp://dind:2375")
 	}
 
@@ -619,24 +622,19 @@ func dockerObjectExists(kind, name string) (bool, error) {
 	return true, nil
 }
 
-func writeSquidConf(baseDir string, domains []string) (string, error) {
+func writeSquidConf(domains []string) (string, error) {
 	conf, err := generateSquidConf(domains)
 	if err != nil {
 		return "", err
 	}
 
-	dir, err := os.MkdirTemp(baseDir, ".sandboxeed-squid-")
+	dir, err := os.MkdirTemp("", "sandboxeed-squid-")
 	if err != nil {
 		return "", err
 	}
 	path := filepath.Join(dir, "squid.conf")
 	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
 	if err != nil {
-		_ = os.RemoveAll(dir)
-		return "", err
-	}
-	if err := file.Chmod(0o600); err != nil {
-		_ = file.Close()
 		_ = os.RemoveAll(dir)
 		return "", err
 	}
@@ -721,7 +719,6 @@ func verifyNetworkInternal(rt ContainerRuntime, name string, expected bool) erro
 
 func waitForProxy(rt ContainerRuntime, containerName string) error {
 	deadline := time.Now().Add(30 * time.Second)
-	runningAt := time.Time{}
 	for time.Now().Before(deadline) {
 		status, err := rt.ContainerStatus(containerName)
 		if err != nil {
@@ -733,18 +730,13 @@ func waitForProxy(rt ContainerRuntime, containerName string) error {
 		}
 		switch status {
 		case "running":
-			if runningAt.IsZero() {
-				runningAt = time.Now()
-			}
-			if time.Since(runningAt) >= 2*time.Second {
+			if rt.Exec(containerName, "squid", "-k", "check") == nil {
 				return nil
 			}
 		case "exited", "dead":
 			stderrf("proxy container failed to start, logs:\n")
 			_ = rt.Logs(containerName)
 			return fmt.Errorf("proxy container exited unexpectedly")
-		default:
-			runningAt = time.Time{}
 		}
 		time.Sleep(500 * time.Millisecond)
 	}

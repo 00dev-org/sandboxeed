@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 // NetworkAttachment describes a network to connect a container to.
@@ -93,7 +94,7 @@ func (d *DockerCLI) RunInteractive(opts RunOpts) error {
 }
 
 func (d *DockerCLI) CopyFileToVolume(volumeName, srcPath, destName string) error {
-	helperName := fmt.Sprintf("sandboxeed-copy-%d", os.Getpid())
+	helperName := fmt.Sprintf("sandboxeed-copy-%d-%d", os.Getpid(), time.Now().UnixNano())
 	createArgs := []string{
 		"create",
 		"--name", helperName,

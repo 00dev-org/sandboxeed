@@ -86,7 +86,7 @@ sandbox:
   environment:                       # appended to defaults
     - MY_VAR=value
   working_dir: /workspace            # default: /workspace
-  docker: enabled                   # enable Docker-in-Docker support
+  docker: true                      # enable Docker-in-Docker support
   domains: # Whitelisted outbound domains
     - github.com
     - api.example.com
@@ -102,7 +102,7 @@ sandbox:
 | `volumes`          | Extra volume mounts prepended with `.:/workspace`. Supports `~`, `./`. |
 | `environment`      | Extra env vars prepended with proxy defaults (`HTTP_PROXY`, etc.).     |
 | `working_dir`      | Working directory inside the container. Default: `/workspace`.         |
-| `docker`           | Set to `enabled` to start a Docker-in-Docker sidecar (see below).      |
+| `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see below).         |
 | `domains`          | Domains the sandbox is allowed to reach. All other traffic is blocked. |
 
 ### No config file
@@ -117,7 +117,7 @@ If no `sandboxeed.yaml` is found, sandboxeed runs a `bash:latest` container with
 
 ## Docker-in-Docker
 
-When `docker: enabled` is set in the config, sandboxeed starts a `docker:dind` sidecar container on the internal
+When `docker: true` is set in the config, sandboxeed starts a `docker:dind` sidecar container on the internal
 network. The sandbox container is configured to use it automatically via `DOCKER_HOST=tcp://dind:2375`.
 
 This allows running `docker` commands inside the sandbox (e.g., `docker build`, `docker run`) without granting the
@@ -150,7 +150,7 @@ boundary**. Keep the following in mind:
 
 - **Docker-in-Docker runs privileged.** The DinD sidecar requires `--privileged`, which grants full host kernel access
   to that container. It is isolated on the internal network, but a container escape from DinD could compromise the host.
-  Only enable `docker: enabled` when you need it.
+  Only set `docker: true` when you need it.
 - **Domain filtering is not bulletproof.** The Squid proxy filters by domain name, not by IP. DNS rebinding, tunneling
   over allowed domains (e.g., via a compromised CDN), or exfiltration through DNS itself are not prevented.
 - **Volume mounts expose host files.** Any path listed under `volumes` is directly accessible inside the sandbox.

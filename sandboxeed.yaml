@@ -12,7 +12,7 @@ sandbox:
     - ./examples/codex/config.toml:/home/node/.codex/config.toml
   environment:
     - DISABLE_AUTOUPDATER=1
-  docker: enabled
+  docker: true
   domains:
     - github.com
     - githubusercontent.com
