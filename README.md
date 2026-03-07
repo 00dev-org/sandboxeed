@@ -105,6 +105,17 @@ sandbox:
 | `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see below).         |
 | `domains`          | Domains the sandbox is allowed to reach. All other traffic is blocked. |
 
+### Agent examples
+
+If you want a starter setup for a specific agent, copy one of the example pairs from [`examples/`](examples/README.md):
+
+- [`examples/claude/Dockerfile.sandbox`](examples/claude/Dockerfile.sandbox) and [`examples/claude/sandboxeed.yaml`](examples/claude/sandboxeed.yaml)
+- [`examples/codex/Dockerfile.sandbox`](examples/codex/Dockerfile.sandbox) and [`examples/codex/sandboxeed.yaml`](examples/codex/sandboxeed.yaml)
+- [`examples/gemini/Dockerfile.sandbox`](examples/gemini/Dockerfile.sandbox) and [`examples/gemini/sandboxeed.yaml`](examples/gemini/sandboxeed.yaml)
+- [`examples/opencode/Dockerfile.sandbox`](examples/opencode/Dockerfile.sandbox) and [`examples/opencode/sandboxeed.yaml`](examples/opencode/sandboxeed.yaml)
+
+Those files are project-agnostic starters. Copy them into your project root as `Dockerfile.sandbox` and `sandboxeed.yaml`, then adjust packages, mounts, and allowed domains for your actual project.
+
 ### No config file
 
 If no `sandboxeed.yaml` is found, sandboxeed runs a `bash:latest` container with:

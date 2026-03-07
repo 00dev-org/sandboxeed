@@ -1,0 +1,23 @@
+FROM node:24
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    curl \
+    procps \
+    sudo \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+RUN mkdir -p /workspace /home/node/.config/opencode /usr/local/share/npm-global && \
+    chown -R node:node /workspace /home/node/.config /usr/local/share
+
+WORKDIR /workspace
+
+USER node
+
+ENV TERM=xterm-256color
+ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
+ENV PATH=$PATH:/usr/local/share/npm-global/bin
+
+RUN npm i -g opencode-ai
+
+CMD ["opencode"]

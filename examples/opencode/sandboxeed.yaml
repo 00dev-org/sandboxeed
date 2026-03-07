@@ -1,0 +1,14 @@
+sandbox:
+  build:
+    dockerfile: Dockerfile.sandbox
+  image: sandboxeed-opencode-example
+  volumes:
+    - ~/.config/opencode:/home/node/.config/opencode
+    - ~/.gitconfig:/home/node/.gitconfig:ro
+  domains:
+    - github.com
+    - githubusercontent.com
+    - opencode.ai
+    - models.dev
+    - api.anthropic.com
+    - api.openai.com

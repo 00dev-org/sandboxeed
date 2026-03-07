@@ -12,10 +12,40 @@ All of these example configs are highly insecure outside sandboxed or otherwise 
 
 SSH config snippet for connecting to GitHub through an HTTP proxy with `corkscrew`. It also disables host key checks, which is convenient for constrained environments but less strict from a security perspective.
 
-### `codex/config.toml`
+### `claude/`
 
-Example Codex configuration. It sets a pragmatic personality, chooses the `gpt-5.4` model with medium reasoning effort, disables approval prompts, marks `/workspace` as trusted, and hides the full-access warning.
+Claude Code examples:
+- `Dockerfile.sandbox` installs the Claude Code CLI.
+- `sandboxeed.yaml` mounts Claude settings and allows Anthropic domains.
+- `settings.json` is a minimal permissive Claude settings example for disposable sandboxes.
 
-### `claude/settings.json`
+### `codex/`
 
-Example Claude settings. It allows Bash commands by default, disables interactive permission prompts, runs a custom status line script, and selects the `haiku` model.
+Codex CLI examples:
+- `Dockerfile.sandbox` installs `@openai/codex`.
+- `sandboxeed.yaml` mounts Codex config and allows OpenAI domains.
+- `config.toml` is a minimal permissive Codex configuration example.
+
+### `gemini/`
+
+Gemini CLI examples:
+- `Dockerfile.sandbox` installs `@google/gemini-cli`.
+- `sandboxeed.yaml` mounts Gemini settings and allows Google API domains.
+
+### `opencode/`
+
+OpenCode examples:
+- `Dockerfile.sandbox` installs OpenCode via the official install script.
+- `sandboxeed.yaml` mounts OpenCode config and allows OpenCode plus common model provider domains.
+
+## How to use them
+
+Copy the files for the agent you want into your project root, then edit them for your project:
+
+```bash
+cp examples/codex/Dockerfile.sandbox ./Dockerfile.sandbox
+cp examples/codex/sandboxeed.yaml ./sandboxeed.yaml
+cp examples/codex/config.toml ./config.toml
+```
+
+These examples are intentionally project-agnostic starters. You will usually need to add your own language runtimes, package managers, SDKs, or extra allowed domains.

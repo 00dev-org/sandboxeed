@@ -6,9 +6,5 @@
     "ask": [],
     "defaultMode": "bypassPermissions"
   },
-  "statusLine": {
-    "type": "command",
-    "command": "bash ~/.claude/statusline.sh"
-  },
   "skipDangerousModePermissionPrompt": true
 }

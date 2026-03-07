@@ -1,0 +1,16 @@
+sandbox:
+  build:
+    dockerfile: Dockerfile.sandbox
+  image: sandboxeed-claude-example
+  volumes:
+    - ~/.claude:/home/node/.claude
+    - ~/.claude.json:/home/node/.claude.json
+    - ~/.gitconfig:/home/node/.gitconfig:ro
+    - ./settings.json:/home/node/.claude/settings.json
+  environment:
+    - DISABLE_AUTOUPDATER=1
+  domains:
+    - github.com
+    - githubusercontent.com
+    - api.anthropic.com
+    - claude.ai
