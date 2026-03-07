@@ -29,7 +29,6 @@ const managedLabelKey = "sandboxeed.managed"
 const managedLabelValue = "true"
 const resourceLabelKey = "sandboxeed.resource"
 const projectLabelKey = "sandboxeed.project"
-const buildImageTag = "sandboxeed-sandbox"
 
 var version string
 
@@ -65,11 +64,7 @@ type Config struct {
 }
 
 func defaultConfig() *Config {
-	return &Config{
-		Sandbox: SandboxConfig{
-			Image: "bash:latest",
-		},
-	}
+	return &Config{}
 }
 
 func loadConfig() (*Config, error) {
@@ -178,7 +173,7 @@ Commands:
   cleanup   Force-remove sandboxeed containers, networks, and volumes after confirmation.
 
 Flags:
-  --build   Build the sandbox image before starting.
+  --build   Build the sandbox image; if a command is provided, run it afterward.
 `)
 }
 
@@ -275,12 +270,31 @@ func run() int {
 		if dockerfile == "" {
 			dockerfile = "Dockerfile"
 		}
-		if err := rt.Build(dockerfile, buildImageTag, "."); err != nil {
+		if err := rt.Build(dockerfile, sandboxImageName(dir, cfg), "."); err != nil {
 			if ctx.Err() != nil {
 				return 0
 			}
 			stderrf("build failed: %v\n", err)
 			return 1
+		}
+		if command == "" {
+			return 0
+		}
+	} else if shouldAutoBuild(cfg) {
+		image := sandboxImageName(dir, cfg)
+		exists, err := rt.ImageExists(image)
+		if err != nil {
+			stderrf("failed to inspect image %q: %v\n", image, err)
+			return 1
+		}
+		if !exists {
+			if err := rt.Build(cfg.Sandbox.Build.Dockerfile, image, "."); err != nil {
+				if ctx.Err() != nil {
+					return 0
+				}
+				stderrf("auto-build failed: %v\n", err)
+				return 1
+			}
 		}
 	}
 
@@ -313,7 +327,7 @@ func run() int {
 		}
 	}
 
-	sandboxErr := runSandbox(rt, resources, cfg, command, args)
+	sandboxErr := runSandbox(rt, resources, cfg, build, command, args)
 	if ctx.Err() != nil {
 		return 0
 	}
@@ -344,7 +358,7 @@ var defaultDockerEnvironment = []string{
 
 const defaultWorkingDir = "/workspace"
 
-func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, command string, extraArgs []string) error {
+func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built bool, command string, extraArgs []string) error {
 	volumes := make([]string, 0, len(defaultVolumes)+len(cfg.Sandbox.Volumes))
 	volumes = append(volumes, defaultVolumes...)
 	volumes = append(volumes, cfg.Sandbox.Volumes...)
@@ -372,7 +386,11 @@ func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, comma
 
 	image := cfg.Sandbox.Image
 	if image == "" {
-		image = buildImageTag
+		if built {
+			image = defaultSandboxImage(resources.projectDir)
+		} else {
+			image = "bash:latest"
+		}
 	}
 
 	return rt.RunInteractive(RunOpts{
@@ -385,6 +403,46 @@ func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, comma
 		Image:    image,
 		Cmd:      append([]string{command}, extraArgs...),
 	})
+}
+
+func sandboxImageName(projectDir string, cfg *Config) string {
+	if cfg.Sandbox.Image != "" {
+		return cfg.Sandbox.Image
+	}
+	return defaultSandboxImage(projectDir)
+}
+
+func shouldAutoBuild(cfg *Config) bool {
+	return strings.TrimSpace(cfg.Sandbox.Build.Dockerfile) != ""
+}
+
+func defaultSandboxImage(projectDir string) string {
+	project := strings.ToLower(filepath.Base(projectDir))
+	project = strings.TrimSpace(project)
+	if project == "" || project == "." || project == string(filepath.Separator) {
+		project = "workspace"
+	}
+
+	var b strings.Builder
+	lastDash := false
+	for _, r := range project {
+		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-'
+		if valid {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	name := strings.Trim(b.String(), "-")
+	if name == "" {
+		name = "workspace"
+	}
+	return name + "-sandboxeed"
 }
 
 func expandVolumeSpec(projectDir, spec string) string {

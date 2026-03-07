@@ -13,8 +13,8 @@ func TestLoadConfigReturnsDefaultsWhenConfigMissing(t *testing.T) {
 		if err != nil {
 			t.Fatalf("loadConfig() error = %v", err)
 		}
-		if cfg.Sandbox.Image != "bash:latest" {
-			t.Fatalf("loadConfig() default image = %q, want %q", cfg.Sandbox.Image, "bash:latest")
+		if cfg.Sandbox.Image != "" {
+			t.Fatalf("loadConfig() default image = %q, want empty string", cfg.Sandbox.Image)
 		}
 	})
 }
@@ -171,6 +171,35 @@ func TestExpandVolumeSpec(t *testing.T) {
 				t.Fatalf("expandVolumeSpec(%q) = %q, want %q", tc.in, got, tc.want)
 			}
 		})
+	}
+}
+
+func TestSandboxImageNamePrefersConfiguredImage(t *testing.T) {
+	cfg := &Config{}
+	cfg.Sandbox.Image = "custom-sandbox:dev"
+
+	if got := sandboxImageName("/workspace/demo", cfg); got != "custom-sandbox:dev" {
+		t.Fatalf("sandboxImageName() = %q, want %q", got, "custom-sandbox:dev")
+	}
+}
+
+func TestSandboxImageNameUsesProjectSpecificDefault(t *testing.T) {
+	cfg := &Config{}
+
+	if got := sandboxImageName("/workspace/My Project", cfg); got != "my-project-sandboxeed" {
+		t.Fatalf("sandboxImageName() = %q, want %q", got, "my-project-sandboxeed")
+	}
+}
+
+func TestShouldAutoBuildRequiresExplicitDockerfile(t *testing.T) {
+	cfg := &Config{}
+	if shouldAutoBuild(cfg) {
+		t.Fatalf("shouldAutoBuild() = true, want false when dockerfile is unset")
+	}
+
+	cfg.Sandbox.Build.Dockerfile = "Dockerfile.sandbox"
+	if !shouldAutoBuild(cfg) {
+		t.Fatalf("shouldAutoBuild() = false, want true when dockerfile is set")
 	}
 }
 

@@ -1,6 +1,7 @@
 sandbox:
   build:
     dockerfile: Dockerfile.sandbox
+  image: sandboxeed-sandbox
   volumes:
     - ~/.claude:/home/node/.claude
     - ~/.codex:/home/node/.codex

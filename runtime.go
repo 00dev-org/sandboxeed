@@ -31,6 +31,7 @@ type RunOpts struct {
 // ContainerRuntime abstracts container engine operations.
 type ContainerRuntime interface {
 	Build(dockerfile, tag, contextDir string) error
+	ImageExists(tag string) (bool, error)
 	RunDetached(opts RunOpts) error
 	RunInteractive(opts RunOpts) error
 	CopyFileToVolume(volumeName, srcPath, destName string) error
@@ -55,6 +56,17 @@ func (d *DockerCLI) Build(dockerfile, tag, contextDir string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func (d *DockerCLI) ImageExists(tag string) (bool, error) {
+	cmd := exec.CommandContext(d.ctx, "docker", "image", "inspect", tag)
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() != 0 {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (d *DockerCLI) RunDetached(opts RunOpts) error {

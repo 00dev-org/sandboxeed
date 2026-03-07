@@ -30,7 +30,7 @@ sandboxeed claude
 # Run a specific command
 sandboxeed node script.js
 
-# Build the sandbox image first, then start
+# Build the sandbox image only
 sandboxeed --build
 
 # Build and run a specific command
@@ -47,12 +47,12 @@ sandboxeed cleanup
 
 | Flag      | Description                                        |
 |-----------|----------------------------------------------------|
-| `--build` | Build the Docker image before starting the sandbox |
+| `--build` | Build the Docker image; if a command is provided, run it afterward |
 
 ### Arguments
 
 The first non-flag argument is the command to run inside the container (default: `bash`). Any additional arguments are
-passed to that command.
+passed to that command. When `--build` is provided without a command, sandboxeed builds the image and exits.
 
 `version` is a built-in command that prints the app version from Go build metadata. Local builds typically print
 `devel`; module-aware installs such as `go install` print the module version when available.
@@ -97,8 +97,8 @@ sandbox:
 
 | Field              | Description                                                            |
 |--------------------|------------------------------------------------------------------------|
-| `build.dockerfile` | Path to Dockerfile (used with `--build`). Defaults to `Dockerfile`.    |
-| `image`            | Docker image to run. Defaults to `sandboxeed-sandbox` (built image).   |
+| `build.dockerfile` | Path to Dockerfile. Used by `--build`, and also for automatic builds when the configured image tag does not exist locally. Defaults to `Dockerfile` only when `--build` is used without an explicit path. |
+| `image`            | Docker image to run and, with `--build`, the image tag to build. Defaults to a per-project tag like `<project>-sandboxeed`; without a build config, no config still falls back to `bash:latest`. |
 | `volumes`          | Extra volume mounts prepended with `.:/workspace`. Supports `~`, `./`. |
 | `environment`      | Extra env vars prepended with proxy defaults (`HTTP_PROXY`, etc.).     |
 | `working_dir`      | Working directory inside the container. Default: `/workspace`.         |
