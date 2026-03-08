@@ -20,6 +20,27 @@ func TestLoadConfigReturnsDefaultsWhenConfigMissing(t *testing.T) {
 	})
 }
 
+func TestLoadConfigRequiresSandboxImageWhenConfigPresent(t *testing.T) {
+	withWorkingDir(t, t.TempDir(), func() {
+		content := strings.Join([]string{
+			"sandbox:",
+			"  working_dir: /app",
+			"",
+		}, "\n")
+		if err := os.WriteFile(filepath.Join(".", configFile), []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatalf("loadConfig() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "sandbox.image is required") {
+			t.Fatalf("loadConfig() error = %v, want sandbox.image is required", err)
+		}
+	})
+}
+
 func TestLoadConfigParsesConfigFile(t *testing.T) {
 	withWorkingDir(t, t.TempDir(), func() {
 		content := strings.Join([]string{
@@ -52,6 +73,27 @@ func TestLoadConfigParsesConfigFile(t *testing.T) {
 		}
 		if len(cfg.Sandbox.Environment) != 1 || cfg.Sandbox.Environment[0] != "FOO=bar" {
 			t.Fatalf("loadConfig() environment = %v, want [FOO=bar]", cfg.Sandbox.Environment)
+		}
+	})
+}
+
+func TestLoadConfigRejectsBlankSandboxImage(t *testing.T) {
+	withWorkingDir(t, t.TempDir(), func() {
+		content := strings.Join([]string{
+			"sandbox:",
+			"  image: \"   \"",
+			"",
+		}, "\n")
+		if err := os.WriteFile(filepath.Join(".", configFile), []byte(content), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatalf("loadConfig() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "sandbox.image is required") {
+			t.Fatalf("loadConfig() error = %v, want sandbox.image is required", err)
 		}
 	})
 }

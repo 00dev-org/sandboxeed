@@ -84,7 +84,17 @@ func loadConfig() (*Config, error) {
 	if err := dec.Decode(&cfg); err != nil {
 		return nil, fmt.Errorf("failed to parse %s: %w", configFile, err)
 	}
+	if err := validateConfig(&cfg); err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", configFile, err)
+	}
 	return &cfg, nil
+}
+
+func validateConfig(cfg *Config) error {
+	if strings.TrimSpace(cfg.Sandbox.Image) == "" {
+		return fmt.Errorf("sandbox.image is required")
+	}
+	return nil
 }
 
 var domainPattern = regexp.MustCompile(`^\*?\.?[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*$`)
