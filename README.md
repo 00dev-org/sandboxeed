@@ -5,10 +5,12 @@ A sandboxed container environment with filtered internet access via a Squid prox
 One consistent Docker-based sandbox for all of your AI agents.
 
 It addresses common issues across popular agent tools:
-- Claude creating empty dotfiles breaking git commands: https://github.com/anthropic-experimental/sandbox-runtime/issues/139
+
+- Claude creating empty dotfiles breaking git
+  commands: https://github.com/anthropic-experimental/sandbox-runtime/issues/139
 - Codex not having network access when sandbox is enabled
 - No built-in sandbox in OpenCode or Copilot CLI
-- Inconsistent sandbox experience when using different AI tools.
+- Inconsistent sandbox experience when using different AI tools
 
 ## Requirements
 
@@ -57,23 +59,26 @@ sandboxeed cleanup
 
 ### Flags
 
-| Flag           | Description                                                                   |
-|----------------|-------------------------------------------------------------------------------|
-| `--build`      | Build the Docker image; if a command is provided, run it afterward            |
-| `--no-docker`  | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml`      |
+| Flag          | Description                                                              |
+|---------------|--------------------------------------------------------------------------|
+| `--build`     | Build the Docker image; if a command is provided, run it afterward       |
+| `--no-docker` | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml` |
 
 ### Arguments
 
-The first non-flag argument is the command to run inside the container (default: `bash`). Any additional arguments are
-passed to that command. When `--build` is provided without a command, sandboxeed builds the image and exits.
+Run `sandboxeed` by itself to open an interactive `bash` shell in the sandbox.
 
-`version` is a built-in command that prints the app version from Go build metadata. Local builds typically print
-`devel`; module-aware installs such as `go install` print the module version when available.
+To run something else, put the command after `sandboxeed`. Everything after the command is passed through as-is. For
+example, `sandboxeed claude` runs Claude inside the sandbox.
 
-`help` is a built-in command that prints a short usage summary.
+If you use `--build` without a command, sandboxeed builds the image and exits.
 
-`cleanup` is a built-in command that scans Docker for sandboxeed-managed containers, networks, and volumes, prints the
-exact resources it found, and asks for confirmation before force-removing them. It does not remove images.
+The following commands are handled by sandboxeed itself:
+
+- `help` shows the usage summary.
+- `version` prints the app version.
+- `cleanup` finds sandboxeed-managed containers, networks, and volumes, shows what will be removed, and asks for
+  confirmation before deleting them. Images are not removed.
 
 ## How it works
 
@@ -93,14 +98,14 @@ Place a `sandboxeed.yaml` file in your project directory:
 sandbox:
   build:
     dockerfile: Dockerfile.sandbox   # Dockerfile to build the image (used with --build)
-  image: my-custom-image:latest      # Image to use (omit if using build)
-  volumes:                           # appended to defaults
+  image: my-custom-image:latest      # Image name to use
+  volumes: # appended to defaults
     - ~/.gitconfig:/root/.gitconfig:ro
-  environment:                       # appended to defaults
+  environment: # appended to defaults
     - MY_VAR=value
   working_dir: /workspace            # default: /workspace
   docker: true                       # enable Docker-in-Docker support
-  domains:                           # Whitelisted outbound domains
+  domains: # Whitelisted outbound domains
     - github.com
     - api.example.com
     - .docker.io                     # wildcard: matches docker.io and all subdomains
@@ -108,26 +113,31 @@ sandbox:
 
 ### Configuration fields
 
-| Field              | Description                                                            |
-|--------------------|------------------------------------------------------------------------|
+| Field              | Description                                                                                                                                                                                                   |
+|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `build.dockerfile` | Path to the Dockerfile. Used by `--build`, and also for automatic builds when the configured image tag does not exist locally. Defaults to `Dockerfile` only when `--build` is used without an explicit path. |
-| `image`            | Docker image to run and, with `--build`, the image tag to build. Defaults to a per-project tag like `<project>-sandboxeed`; without build config, sandboxeed falls back to `bash:latest`. |
-| `volumes`          | Extra volume mounts added after the default `.:/workspace` mount. Supports `~` and `./`. |
-| `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, etc.). |
-| `working_dir`      | Working directory inside the container. Default: `/workspace`.         |
-| `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see below).         |
-| `domains`          | Domains the sandbox is allowed to reach. All other traffic is blocked. |
+| `image`            | Docker image to run and, with `--build`, the image tag to build. Defaults to a per-project tag like `<project>-sandboxeed`; without build config, sandboxeed falls back to `bash:latest`.                     |
+| `volumes`          | Extra volume mounts added after the default `.:/workspace` mount. Supports `~` and `./`.                                                                                                                      |
+| `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, etc.).                                                                                                                              |
+| `working_dir`      | Working directory inside the container. Default: `/workspace`.                                                                                                                                                |
+| `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see below).                                                                                                                                                |
+| `domains`          | Domains the sandbox is allowed to reach. All other traffic is blocked.                                                                                                                                        |
 
 ### Agent examples
 
 If you want a starter setup for a specific agent, copy one of the example pairs from [`examples/`](examples/README.md):
 
-- [`examples/claude/Dockerfile.sandbox`](examples/claude/Dockerfile.sandbox) and [`examples/claude/sandboxeed.yaml`](examples/claude/sandboxeed.yaml)
-- [`examples/codex/Dockerfile.sandbox`](examples/codex/Dockerfile.sandbox) and [`examples/codex/sandboxeed.yaml`](examples/codex/sandboxeed.yaml)
-- [`examples/gemini/Dockerfile.sandbox`](examples/gemini/Dockerfile.sandbox) and [`examples/gemini/sandboxeed.yaml`](examples/gemini/sandboxeed.yaml)
-- [`examples/opencode/Dockerfile.sandbox`](examples/opencode/Dockerfile.sandbox) and [`examples/opencode/sandboxeed.yaml`](examples/opencode/sandboxeed.yaml)
+- [`examples/claude/Dockerfile.sandbox`](examples/claude/Dockerfile.sandbox) and [
+  `examples/claude/sandboxeed.yaml`](examples/claude/sandboxeed.yaml)
+- [`examples/codex/Dockerfile.sandbox`](examples/codex/Dockerfile.sandbox) and [
+  `examples/codex/sandboxeed.yaml`](examples/codex/sandboxeed.yaml)
+- [`examples/gemini/Dockerfile.sandbox`](examples/gemini/Dockerfile.sandbox) and [
+  `examples/gemini/sandboxeed.yaml`](examples/gemini/sandboxeed.yaml)
+- [`examples/opencode/Dockerfile.sandbox`](examples/opencode/Dockerfile.sandbox) and [
+  `examples/opencode/sandboxeed.yaml`](examples/opencode/sandboxeed.yaml)
 
-Those files are project-agnostic starters. Copy them into your project root as `Dockerfile.sandbox` and `sandboxeed.yaml`, then adjust packages, mounts, and allowed domains for your actual project.
+Those files are project-agnostic starters. Copy them into your project root as `Dockerfile.sandbox` and
+`sandboxeed.yaml`, then adjust packages, mounts, and allowed domains for your actual project.
 
 ### No config file
 
@@ -144,8 +154,8 @@ If no `sandboxeed.yaml` is found, sandboxeed runs a `bash:latest` container with
 When `docker: true` is set in the config, sandboxeed starts a `docker:dind` sidecar container on the internal
 network. The sandbox container is configured to use it automatically via `DOCKER_HOST=tcp://dind:2375`.
 
-This lets you run `docker` commands inside the sandbox (for example, `docker build` and `docker run`) without granting the
-sandbox container privileged access. The DinD container itself runs privileged, but is isolated within the internal
+This lets you run `docker` commands inside the sandbox (for example, `docker build` and `docker run`) without granting
+the sandbox container privileged access. The DinD container itself runs privileged, but is isolated within the internal
 network — its outbound traffic goes through the Squid proxy like everything else.
 
 Starting the DinD sidecar typically adds about 10 seconds to sandbox startup time. To skip that overhead for a single

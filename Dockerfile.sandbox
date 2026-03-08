@@ -49,4 +49,7 @@ RUN npm i -g @openai/codex
 # Install OpenCode
 RUN npm i -g opencode-ai
 
+# Intall Gemini
+RUN npm i -g @google/gemini-cli
+
 CMD ["claude"]

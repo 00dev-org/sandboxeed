@@ -4,6 +4,7 @@ sandbox:
   image: sandboxeed-opencode-example
   volumes:
     - ~/.config/opencode:/home/node/.config/opencode
+    - ~/.local/share/opencode/:/home/node/.local/share/opencode/
     - ~/.gitconfig:/home/node/.gitconfig:ro
   domains:
     - github.com
