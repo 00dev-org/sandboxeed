@@ -6,6 +6,7 @@ sandbox:
     - ~/.claude:/home/node/.claude
     - ~/.codex:/home/node/.codex
     - ~/.claude.json:/home/node/.claude.json
+    - ~/.config/opencode:/home/node/.config/opencode
     - ~/.gitconfig:/home/node/.gitconfig:ro
     - ~/.ssh/ai_agent_key:/home/node/.ssh/id_rsa:ro
     - ./examples/git.conf:/home/node/.ssh/config:ro
@@ -22,6 +23,7 @@ sandbox:
     - api.openai.com
     - claude.ai
     - chatgpt.com
+    - openrouter.ai
     - proxy.golang.org
     - .docker.com
     - .docker.io

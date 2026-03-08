@@ -46,4 +46,7 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 # Install Codex CLI
 RUN npm i -g @openai/codex
 
+# Install OpenCode
+RUN npm i -g opencode-ai
+
 CMD ["claude"]
