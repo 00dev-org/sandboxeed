@@ -12,6 +12,51 @@ It addresses common issues across popular agent tools:
 - No built-in sandbox in OpenCode or Copilot CLI
 - Inconsistent sandbox experience when using different AI tools
 
+## Architecture
+
+```
+  HOST
+  +--------------------------------------------------------------------------+
+  |                                                                          |
+  |  $ sandboxeed claude                                                     |
+  |        |                                                                 |
+  |        |  manages container lifecycle                                    |
+  |        |                                                                 |
+  |  +-----+----------------- internal network ----------------------------+ |
+  |  |                                                                     | |
+  |  |  +-----------------------------+   +-----------------------------+  | |
+  |  |  |          sandbox            |   |        squid proxy          |  | |
+  |  |  |                             |-->|                             |  | |
+  |  |  |  AI agent                   |   |  [+] github.com             |  | |
+  |  |  |  (claude / codex /          |   |  [+] api.openai.com         |  | |
+  |  |  |   gemini / opencode / ...)  |   |  [-] everything else -> 403 |  | |
+  |  |  |                             |   +---------------+-------------+  | |
+  |  |  |  /workspace <- ./           |                   |                | |
+  |  |  |  (host dir, always mounted) |                   | egress network | |
+  |  |  +-----------------------------+                   |                | |
+  |  |                                                    |                | |
+  |  |  +-----------------------------+                   |                | |
+  |  |  |       DinD  (optional)      |                   |                | |
+  |  |  |       docker daemon         |                   |                | |
+  |  |  |       DOCKER_HOST=tcp://dind|                   |                | |
+  |  |  +-----------------------------+                   |                | |
+  |  +------------------------------------------------------+--------------+ |
+  |                                                         |                |
+  +---------------------------------------------------------+----------------+
+                                                            |
+                                                            v
+                                                   +-----------------+
+                                                   |    internet     |
+                                                   |  (allowed only) |
+                                                   +-----------------+
+```
+
+The sandbox container has **no direct internet access** — all outbound traffic is
+forced through the Squid proxy, which only forwards connections to your configured
+`domains`. Two Docker networks are created per run: an internal-only network shared
+by the sandbox, proxy, and optional DinD sidecar, and an egress network that gives
+only the proxy a path to the internet.
+
 ## Requirements
 
 - Linux/macOS
