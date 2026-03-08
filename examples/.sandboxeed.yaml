@@ -1,0 +1,28 @@
+sandbox:
+  volumes:
+    - ~/.claude:/home/node/.claude
+    - ~/.codex:/home/node/.codex
+    - ~/.claude.json:/home/node/.claude.json
+    - ~/.config/opencode:/home/node/.config/opencode
+    - ~/.local/share/opencode/:/home/node/.local/share/opencode/
+    - ~/.gemini:/home/node/.gemini
+    - ~/.gitconfig:/home/node/.gitconfig:ro
+    - ~/.ssh/ai_agent_key:/home/node/.ssh/id_rsa:ro
+  environment:
+    - TERM=xterm-256color
+    - DISABLE_AUTOUPDATER=1
+  domains:
+    - .github.com
+    - .githubusercontent.com
+    - .npmjs.org
+    - .anthropic.com
+    - .claude.ai
+    - .openai.com
+    - .chatgpt.com
+    - .openrouter.ai
+    - .googleapis.com
+    - .google.com
+    - .golang.org
+    - .docker.com
+    - .docker.io
+    - .cloudflarestorage.com

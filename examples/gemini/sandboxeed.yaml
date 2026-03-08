@@ -6,7 +6,7 @@ sandbox:
     - ~/.gemini:/home/node/.gemini
     - ~/.gitconfig:/home/node/.gitconfig:ro
   domains:
-    - github.com
-    - githubusercontent.com
+    - .github.com
+    - .githubusercontent.com
     - .googleapis.com
     - .google.com

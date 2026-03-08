@@ -7,7 +7,7 @@ sandbox:
     - ~/.gitconfig:/home/node/.gitconfig:ro
     - ./config.toml:/home/node/.codex/config.toml
   domains:
-    - github.com
-    - githubusercontent.com
-    - api.openai.com
-    - chatgpt.com
+    - .github.com
+    - .githubusercontent.com
+    - .openai.com
+    - .chatgpt.com

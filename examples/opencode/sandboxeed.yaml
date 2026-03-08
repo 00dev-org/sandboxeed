@@ -7,9 +7,9 @@ sandbox:
     - ~/.local/share/opencode/:/home/node/.local/share/opencode/
     - ~/.gitconfig:/home/node/.gitconfig:ro
   domains:
-    - github.com
-    - githubusercontent.com
-    - opencode.ai
-    - models.dev
-    - api.anthropic.com
-    - api.openai.com
+    - .github.com
+    - .githubusercontent.com
+    - .opencode.ai
+    - .models.dev
+    - .anthropic.com
+    - .openai.com

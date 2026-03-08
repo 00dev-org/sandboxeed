@@ -10,7 +10,8 @@ sandbox:
   environment:
     - DISABLE_AUTOUPDATER=1
   domains:
-    - github.com
-    - githubusercontent.com
-    - api.anthropic.com
-    - claude.ai
+    - .github.com
+    - .githubusercontent.com
+    - .anthropic.com
+    - .claude.ai
+    - .claude.com

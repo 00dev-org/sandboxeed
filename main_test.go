@@ -9,7 +9,7 @@ import (
 )
 
 func TestLoadConfigReturnsDefaultsWhenConfigMissing(t *testing.T) {
-	withWorkingDir(t, t.TempDir(), func() {
+	withConfigDirs(t, "", func(projectDir, homeDir string) {
 		cfg, err := loadConfig()
 		if err != nil {
 			t.Fatalf("loadConfig() error = %v", err)
@@ -17,76 +17,138 @@ func TestLoadConfigReturnsDefaultsWhenConfigMissing(t *testing.T) {
 		if cfg.Sandbox.Image != "" {
 			t.Fatalf("loadConfig() default image = %q, want empty string", cfg.Sandbox.Image)
 		}
-	})
-}
-
-func TestLoadConfigRequiresSandboxImageWhenConfigPresent(t *testing.T) {
-	withWorkingDir(t, t.TempDir(), func() {
-		content := strings.Join([]string{
-			"sandbox:",
-			"  working_dir: /app",
-			"",
-		}, "\n")
-		if err := os.WriteFile(filepath.Join(".", configFile), []byte(content), 0o600); err != nil {
-			t.Fatalf("WriteFile() error = %v", err)
+		if len(cfg.Sandbox.Volumes) != 0 {
+			t.Fatalf("loadConfig() volumes = %v, want none", cfg.Sandbox.Volumes)
 		}
-
-		_, err := loadConfig()
-		if err == nil {
-			t.Fatalf("loadConfig() error = nil, want error")
+		if len(cfg.Sandbox.Environment) != 0 {
+			t.Fatalf("loadConfig() environment = %v, want none", cfg.Sandbox.Environment)
 		}
-		if !strings.Contains(err.Error(), "sandbox.image is required") {
-			t.Fatalf("loadConfig() error = %v, want sandbox.image is required", err)
+		if len(cfg.Sandbox.Domains) != 0 {
+			t.Fatalf("loadConfig() domains = %v, want none", cfg.Sandbox.Domains)
 		}
 	})
 }
 
-func TestLoadConfigParsesConfigFile(t *testing.T) {
-	withWorkingDir(t, t.TempDir(), func() {
-		content := strings.Join([]string{
+func TestLoadConfigLoadsUserConfigWhenPresent(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  volumes:",
+		"    - ~/.gitconfig:/home/node/.gitconfig:ro",
+		"  environment:",
+		"    - FOO=user",
+		"  domains:",
+		"    - user.example.com",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatalf("loadConfig() error = %v", err)
+		}
+
+		if got, want := cfg.Sandbox.Volumes, []string{"~/.gitconfig:/home/node/.gitconfig:ro"}; !equalStrings(got, want) {
+			t.Fatalf("loadConfig() volumes = %v, want %v", got, want)
+		}
+		if got, want := cfg.Sandbox.Environment, []string{"FOO=user"}; !equalStrings(got, want) {
+			t.Fatalf("loadConfig() environment = %v, want %v", got, want)
+		}
+		if got, want := cfg.Sandbox.Domains, []string{"user.example.com"}; !equalStrings(got, want) {
+			t.Fatalf("loadConfig() domains = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestLoadConfigMergesUserAndProjectConfig(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  volumes:",
+		"    - ~/.gitconfig:/home/node/.gitconfig:ro",
+		"    - ~/.npmrc:/home/node/.npmrc:ro",
+		"  environment:",
+		"    - FOO=user",
+		"    - SHARED=user",
+		"  domains:",
+		"    - user.example.com",
+		"    - shared.example.com",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
 			"sandbox:",
 			"  image: alpine:3.22",
 			"  working_dir: /app",
-			"  domains:",
-			"    - example.com",
-			"    - .internal.example",
+			"  volumes:",
+			"    - ./project-gitconfig:/home/node/.gitconfig:ro",
+			"    - ./cache:/cache",
 			"  environment:",
-			"    - FOO=bar",
+			"    - SHARED=project",
+			"    - BAR=project",
+			"  domains:",
+			"    - shared.example.com",
+			"    - project.example.com",
 			"",
-		}, "\n")
-		if err := os.WriteFile(filepath.Join(".", configFile), []byte(content), 0o600); err != nil {
-			t.Fatalf("WriteFile() error = %v", err)
-		}
+		}, "\n"))
 
 		cfg, err := loadConfig()
 		if err != nil {
 			t.Fatalf("loadConfig() error = %v", err)
 		}
+
 		if cfg.Sandbox.Image != "alpine:3.22" {
 			t.Fatalf("loadConfig() image = %q, want %q", cfg.Sandbox.Image, "alpine:3.22")
 		}
 		if cfg.Sandbox.WorkingDir != "/app" {
 			t.Fatalf("loadConfig() working dir = %q, want %q", cfg.Sandbox.WorkingDir, "/app")
 		}
-		if len(cfg.Sandbox.Domains) != 2 {
-			t.Fatalf("loadConfig() domains len = %d, want 2", len(cfg.Sandbox.Domains))
+		if got, want := cfg.Sandbox.Volumes, []string{
+			"./project-gitconfig:/home/node/.gitconfig:ro",
+			"~/.npmrc:/home/node/.npmrc:ro",
+			"./cache:/cache",
+		}; !equalStrings(got, want) {
+			t.Fatalf("loadConfig() volumes = %v, want %v", got, want)
 		}
-		if len(cfg.Sandbox.Environment) != 1 || cfg.Sandbox.Environment[0] != "FOO=bar" {
-			t.Fatalf("loadConfig() environment = %v, want [FOO=bar]", cfg.Sandbox.Environment)
+		if got, want := cfg.Sandbox.Environment, []string{
+			"FOO=user",
+			"SHARED=project",
+			"BAR=project",
+		}; !equalStrings(got, want) {
+			t.Fatalf("loadConfig() environment = %v, want %v", got, want)
+		}
+		if got, want := cfg.Sandbox.Domains, []string{
+			"user.example.com",
+			"shared.example.com",
+			"project.example.com",
+		}; !equalStrings(got, want) {
+			t.Fatalf("loadConfig() domains = %v, want %v", got, want)
 		}
 	})
 }
 
-func TestLoadConfigRejectsBlankSandboxImage(t *testing.T) {
-	withWorkingDir(t, t.TempDir(), func() {
-		content := strings.Join([]string{
-			"sandbox:",
-			"  image: \"   \"",
-			"",
-		}, "\n")
-		if err := os.WriteFile(filepath.Join(".", configFile), []byte(content), 0o600); err != nil {
-			t.Fatalf("WriteFile() error = %v", err)
+func TestLoadConfigRejectsUnsupportedUserFields(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  image: alpine:3.22",
+		"  docker: true",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatalf("loadConfig() error = nil, want error")
 		}
+		if !strings.Contains(err.Error(), "only supports sandbox.volumes, sandbox.environment, and sandbox.domains") {
+			t.Fatalf("loadConfig() error = %v, want supported-fields guidance", err)
+		}
+		if !strings.Contains(err.Error(), "unsupported fields: image, docker") {
+			t.Fatalf("loadConfig() error = %v, want unsupported field list", err)
+		}
+	})
+}
+
+func TestLoadConfigRequiresSandboxImageWhenProjectConfigPresent(t *testing.T) {
+	withConfigDirs(t, "", func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  working_dir: /app",
+			"",
+		}, "\n"))
 
 		_, err := loadConfig()
 		if err == nil {
@@ -94,6 +156,44 @@ func TestLoadConfigRejectsBlankSandboxImage(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), "sandbox.image is required") {
 			t.Fatalf("loadConfig() error = %v, want sandbox.image is required", err)
+		}
+	})
+}
+
+func TestLoadConfigRejectsBlankSandboxImage(t *testing.T) {
+	withConfigDirs(t, "", func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  image: \"   \"",
+			"",
+		}, "\n"))
+
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatalf("loadConfig() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "sandbox.image is required") {
+			t.Fatalf("loadConfig() error = %v, want sandbox.image is required", err)
+		}
+	})
+}
+
+func TestLoadConfigDoesNotRequireImageForUserConfigOnly(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  environment:",
+		"    - FOO=user",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatalf("loadConfig() error = %v", err)
+		}
+		if cfg.Sandbox.Image != "" {
+			t.Fatalf("loadConfig() image = %q, want empty", cfg.Sandbox.Image)
+		}
+		if got, want := cfg.Sandbox.Environment, []string{"FOO=user"}; !equalStrings(got, want) {
+			t.Fatalf("loadConfig() environment = %v, want %v", got, want)
 		}
 	})
 }
@@ -271,6 +371,11 @@ func TestShouldAutoBuildRequiresExplicitDockerfile(t *testing.T) {
 		t.Fatalf("shouldAutoBuild() = true, want false when dockerfile is unset")
 	}
 
+	cfg.Sandbox.Build.Dockerfile = "   "
+	if shouldAutoBuild(cfg) {
+		t.Fatalf("shouldAutoBuild() = true, want false when dockerfile is whitespace")
+	}
+
 	cfg.Sandbox.Build.Dockerfile = "Dockerfile.sandbox"
 	if !shouldAutoBuild(cfg) {
 		t.Fatalf("shouldAutoBuild() = false, want true when dockerfile is set")
@@ -294,4 +399,39 @@ func withWorkingDir(t *testing.T, dir string, fn func()) {
 	})
 
 	fn()
+}
+
+func withConfigDirs(t *testing.T, userConfig string, fn func(projectDir, homeDir string)) {
+	t.Helper()
+
+	projectDir := t.TempDir()
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	if userConfig != "" {
+		writeFile(t, filepath.Join(homeDir, userConfigFile), userConfig)
+	}
+
+	withWorkingDir(t, projectDir, func() {
+		fn(projectDir, homeDir)
+	})
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("WriteFile(%q) error = %v", path, err)
+	}
+}
+
+func equalStrings(got, want []string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
 }

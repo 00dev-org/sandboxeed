@@ -1,8 +1,8 @@
 # sandboxeed
 
-A sandboxed container environment with filtered internet access via a Squid proxy.
+A Docker-based sandbox with filtered internet access via a Squid proxy.
 
-One consistent Docker-based sandbox for all of your AI agents.
+One consistent environment for all of your AI coding agents.
 
 It addresses common issues across popular agent tools:
 
@@ -26,34 +26,54 @@ go build -o sandboxeed .
 
 Or use the pre-built binary if available.
 
+## Quick start
+
+1. Copy an example config for your agent:
+
+```bash
+cp examples/claude/Dockerfile.sandbox ./Dockerfile.sandbox
+cp examples/claude/sandboxeed.yaml ./sandboxeed.yaml
+```
+
+2. Build the sandbox image:
+
+```bash
+sandboxeed --build
+```
+
+3. Run your agent:
+
+```bash
+sandboxeed claude
+```
+
+See [Agent examples](#agent-examples) for all supported agents.
+
 ## Usage
 
 ```bash
 # Start an interactive shell in the sandbox
 sandboxeed
 
-# Show command help
-sandboxeed help
-
 # Run an AI agent tool
 sandboxeed claude
 
-# Run a specific command
+# Run any command inside the sandbox
 sandboxeed node script.js
 
-# Build the sandbox image only
-sandboxeed --build
-
-# Build and run a specific command
+# Build the sandbox image, then run a command
 sandboxeed --build claude
 
-# Run without Docker-in-Docker even if docker: true is in the config
+# Build the sandbox image only (no command)
+sandboxeed --build
+
+# Skip Docker-in-Docker for this run (if enabled)
 sandboxeed --no-docker claude
 
-# Print the current app version
+# Print the current version
 sandboxeed version
 
-# List sandboxeed-owned Docker resources and remove them after confirmation
+# Remove leftover sandboxeed Docker resources
 sandboxeed cleanup
 ```
 
@@ -64,140 +84,201 @@ sandboxeed cleanup
 | `--build`     | Build the Docker image; if a command is provided, run it afterward       |
 | `--no-docker` | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml` |
 
-### Arguments
+### Built-in commands
 
-Run `sandboxeed` by itself to open an interactive `bash` shell in the sandbox.
+- `help` — show the usage summary (`--help` and `-h` also work)
+- `version` — print the app version
+- `cleanup` — list sandboxeed-managed containers, networks, and volumes and remove them after
+  confirmation; images are not removed
 
-To run something else, put the command after `sandboxeed`. Everything after the command is passed through as-is. For
-example, `sandboxeed claude` runs Claude inside the sandbox.
+Without a built-in command, everything after `sandboxeed` is run inside the sandbox. If no command
+is given, an interactive `bash` shell opens.
 
-If you use `--build` without a command, sandboxeed builds the image and exits.
+### Auto-build
 
-The following commands are handled by sandboxeed itself:
+When `build.dockerfile` is set in `sandboxeed.yaml` and the configured image does not exist locally,
+sandboxeed builds it automatically before starting the sandbox. Use `--build` to force a rebuild
+regardless.
 
-- `help` shows the usage summary.
-- `version` prints the app version.
-- `cleanup` finds sandboxeed-managed containers, networks, and volumes, shows what will be removed, and asks for
-  confirmation before deleting them. Images are not removed.
+## Startup sequence
 
-## How it works
+When you run `sandboxeed`:
 
-1. A Squid proxy container is started with a generated config that whitelists only the domains listed in
-   `sandboxeed.yaml`.
-2. The sandbox container is started connected only to an internal network — all outbound traffic goes through the proxy.
-3. When the sandbox exits, sandboxeed removes the proxy, sandbox, optional DinD sidecar, and their per-run networks.
+1. A Squid proxy container starts with an allowlist of the domains you configured.
+2. The sandbox container starts connected to an internal Docker network — all outbound traffic goes
+   through the proxy, and everything not on your domain list is blocked.
+3. When the sandbox exits, sandboxeed removes the proxy, sandbox, any DinD sidecar, and all
+   per-run networks and volumes.
 
-Each run creates uniquely named containers, networks, and DinD volume resources, so interrupted starts do not block the
-next run and multiple sandboxes can run concurrently from the same directory.
+Each run uses uniquely named containers, networks, and volumes, so a crashed or interrupted run
+won't block the next one and multiple sandboxes can run concurrently from the same directory.
 
 ## Configuration
 
-Place a `sandboxeed.yaml` file in your project directory:
+Configuration is loaded in this order:
+
+1. Built-in defaults
+2. Optional user config at `~/.sandboxeed.yaml`
+3. Optional project config at `./sandboxeed.yaml`
+
+Later layers override earlier ones. Environment variables are merged by variable name, volume mounts
+are merged by container destination path, and domains are deduplicated.
+
+The current directory is always mounted at `/workspace` inside the sandbox. Any volumes you
+configure are merged on top of that default.
+
+Place a `sandboxeed.yaml` in your project directory:
 
 ```yaml
 sandbox:
   build:
-    dockerfile: Dockerfile.sandbox   # Dockerfile to build the image (used with --build)
-  image: my-custom-image:latest      # Image name to use
-  volumes: # appended to defaults
+    dockerfile: Dockerfile.sandbox   # Dockerfile for --build and auto-build
+  image: my-custom-image:latest      # Image to run (required when this file is present)
+  volumes:
     - ~/.gitconfig:/root/.gitconfig:ro
-  environment: # appended to defaults
+  environment:
     - MY_VAR=value
   working_dir: /workspace            # default: /workspace
   docker: true                       # enable Docker-in-Docker support
-  domains: # Whitelisted outbound domains
+  domains:                           # whitelisted outbound domains
     - github.com
     - api.example.com
-    - .docker.io                     # wildcard: matches docker.io and all subdomains
+    - .docker.io                     # matches docker.io and all subdomains
 ```
 
 ### Configuration fields
 
 | Field              | Description                                                                                                                                                                                                   |
 |--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `build.dockerfile` | Path to the Dockerfile. Used by `--build`, and also for automatic builds when the configured image tag does not exist locally. Defaults to `Dockerfile` only when `--build` is used without an explicit path. |
-| `image`            | Required when `sandboxeed.yaml` is present. This is the Docker image to run and, with `--build`, the image tag to build.                                                                                   |
-| `volumes`          | Extra volume mounts added after the default `.:/workspace` mount. Supports `~` and `./`.                                                                                                                      |
-| `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, etc.).                                                                                                                              |
+| `build.dockerfile` | Path to the Dockerfile. Used by `--build` and for automatic builds when the configured image tag is not found locally. Defaults to `Dockerfile` when `--build` is used without an explicit path. |
+| `image`            | Required when `sandboxeed.yaml` is present. The Docker image to run (and to tag when using `--build`).                                                                                                    |
+| `volumes`          | Extra volume mounts added after the default `.:/workspace` mount. Supports `~`, `./`, and `../` path prefixes. When multiple entries target the same container path, the last config layer wins.           |
+| `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`). When the same variable appears more than once, the last config layer wins.                           |
 | `working_dir`      | Working directory inside the container. Default: `/workspace`.                                                                                                                                                |
-| `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see below).                                                                                                                                                |
-| `domains`          | Domains the sandbox is allowed to reach. All other traffic is blocked.                                                                                                                                        |
+| `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see [Docker-in-Docker](#docker-in-docker)).                                                                                                               |
+| `domains`          | Domains the sandbox is allowed to reach. All other outbound traffic is blocked. User and project domains are combined and deduplicated.                                                                     |
+
+### User config
+
+Keep personal defaults in `~/.sandboxeed.yaml`. Only these fields are supported there:
+
+- `sandbox.volumes`
+- `sandbox.environment`
+- `sandbox.domains`
+
+Fields such as `image`, `build`, `working_dir`, and `docker` belong in the project config.
+sandboxeed will report an error if they appear in the user config.
+
+Use it to avoid committing user-dependent changes to the project repository and to avoid repetition across multiple projects.
+For example: mount configurations for AI agents you use, set common environment variables, or whitelist commonly used domains.
+
+User config:
+```yaml
+# ~/.sandboxeed.yaml
+sandbox:
+  volumes:
+    - ~/.gitconfig:/home/node/.gitconfig:ro
+  environment:
+    - OPENAI_API_KEY=from-user-config
+  domains:
+    - api.openai.com
+```
+Project config:
+```yaml
+# ./sandboxeed.yaml
+sandbox:
+  image: my-custom-image:latest
+  environment:
+    - OPENAI_API_KEY=from-project-config   # overrides the user config value
+  volumes:
+    - ./gitconfig:/home/node/.gitconfig:ro  # overrides the user config mount for the same path
+  domains:
+    - github.com                            # combined with api.openai.com from user config
+```
+
+In the example above, the project config overrides the `/home/node/.gitconfig` mount and the
+`OPENAI_API_KEY` value, while the final allowed domain list includes both `api.openai.com` and
+`github.com`.
 
 ### Agent examples
 
-If you want a starter setup for a specific agent, copy one of the example pairs from [`examples/`](examples/README.md):
+For a ready-to-use starting point, copy the files for your agent from [`examples/`](examples/README.md):
 
-- [`examples/claude/Dockerfile.sandbox`](examples/claude/Dockerfile.sandbox) and [
-  `examples/claude/sandboxeed.yaml`](examples/claude/sandboxeed.yaml)
-- [`examples/codex/Dockerfile.sandbox`](examples/codex/Dockerfile.sandbox) and [
-  `examples/codex/sandboxeed.yaml`](examples/codex/sandboxeed.yaml)
-- [`examples/gemini/Dockerfile.sandbox`](examples/gemini/Dockerfile.sandbox) and [
-  `examples/gemini/sandboxeed.yaml`](examples/gemini/sandboxeed.yaml)
-- [`examples/opencode/Dockerfile.sandbox`](examples/opencode/Dockerfile.sandbox) and [
-  `examples/opencode/sandboxeed.yaml`](examples/opencode/sandboxeed.yaml)
+| Agent | Files |
+|-------|-------|
+| [Claude Code](examples/claude/) | `Dockerfile.sandbox`, `sandboxeed.yaml`, `settings.json` |
+| [Codex CLI](examples/codex/) | `Dockerfile.sandbox`, `sandboxeed.yaml`, `config.toml` |
+| [Gemini CLI](examples/gemini/) | `Dockerfile.sandbox`, `sandboxeed.yaml` |
+| [OpenCode](examples/opencode/) | `Dockerfile.sandbox`, `sandboxeed.yaml` |
 
-Those files are project-agnostic starters. Copy them into your project root as `Dockerfile.sandbox` and
-`sandboxeed.yaml`, then adjust packages, mounts, and allowed domains for your actual project.
+These are project-agnostic starters. You will typically need to add language runtimes, package
+managers, SDKs, or extra allowed domains for your actual project.
 
 ### No config file
 
 If no `sandboxeed.yaml` is found, sandboxeed runs a `bash:latest` container with:
 
-- Current directory mounted at `/workspace` (default volume)
-- Working directory set to `/workspace`
+- Current directory mounted at `/workspace`
 - Proxy environment variables set (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`)
-- `bash` as the shell
-- No outbound internet access (all traffic blocked by proxy)
+- No outbound internet access (all traffic blocked by the proxy)
 
 ## Docker-in-Docker
 
-When `docker: true` is set in the config, sandboxeed starts a `docker:dind` sidecar container on the internal
-network. The sandbox container is configured to use it automatically via `DOCKER_HOST=tcp://dind:2375`.
+When `docker: true` is set in the config, sandboxeed starts a `docker:dind` sidecar container on
+the internal network. The sandbox container is configured to use it automatically via
+`DOCKER_HOST=tcp://dind:2375`.
 
-This lets you run `docker` commands inside the sandbox (for example, `docker build` and `docker run`) without granting
-the sandbox container privileged access. The DinD container itself runs privileged, but is isolated within the internal
-network — its outbound traffic goes through the Squid proxy like everything else.
+This lets you run `docker` commands inside the sandbox (for example, `docker build` and
+`docker run`) without granting the sandbox container privileged access. The DinD container itself
+runs privileged, but is isolated on the internal network — its outbound traffic goes through the
+Squid proxy like everything else.
 
-Starting the DinD sidecar typically adds about 10 seconds to sandbox startup time. To skip that overhead for a single
-run, use `sandboxeed --no-docker ...` even when `docker: true` is set in the config.
+Starting the DinD sidecar typically adds about 10 seconds to sandbox startup time. To skip that
+overhead for a single run, use `sandboxeed --no-docker ...` even when `docker: true` is set.
 
-TLS is disabled between the sandbox and DinD since they communicate over an internal-only network with no external
-routing.
+TLS is disabled between the sandbox and DinD since they communicate over an internal-only network
+with no external routing.
 
-When using Docker-in-Docker, make sure your `domains` list includes the registries you need to pull from (e.g.,
-`.docker.io`, `.cloudflarestorage.com` for Docker Hub image layers).
+When using Docker-in-Docker, make sure your `domains` list includes the registries you need to pull
+from (e.g., `.docker.io`, `.cloudflarestorage.com` for Docker Hub image layers).
 
 ## Network isolation
 
-The sandbox container has **no direct internet access**. All traffic is routed through a Squid proxy that only allows
-connections to the domains listed under `domains`. An empty `domains` list blocks all outbound traffic.
+The sandbox container has **no direct internet access**. All traffic is routed through a Squid proxy
+that only allows connections to the domains listed under `domains`. An empty `domains` list blocks
+all outbound traffic.
 
 Two Docker networks are created per run:
 
-- `<project>-internal-<run-id>` — connects the sandbox, proxy, and optional DinD sidecar (internal, no external routing)
+- `<project>-internal-<run-id>` — connects the sandbox, proxy, and optional DinD sidecar (internal,
+  no external routing)
 - `<project>-egress-<run-id>` — connects the proxy to the outside world
 
-When Docker-in-Docker is enabled, sandboxeed also creates a per-run labeled volume for `/var/lib/docker` inside the
-DinD sidecar so the volume can be cleaned up reliably.
+When Docker-in-Docker is enabled, sandboxeed also creates a per-run labeled volume for
+`/var/lib/docker` inside the DinD sidecar so it can be cleaned up reliably.
 
 ## Security considerations
 
-sandboxeed reduces the attack surface of running untrusted or semi-trusted code, but it is **not a complete security
-boundary**. Keep the following in mind:
+sandboxeed reduces the attack surface of running untrusted or semi-trusted code, but it is **not a
+complete security boundary**. Keep the following in mind:
 
-- **Docker-in-Docker runs privileged.** The DinD sidecar requires `--privileged`, which grants full host kernel access
-  to that container. It is isolated on the internal network, but a container escape from DinD could compromise the host.
-  Only set `docker: true` when you need it.
-- **Domain filtering is not bulletproof.** The Squid proxy filters by domain name, not by IP. DNS rebinding, tunneling
-  over allowed domains (e.g., via a compromised CDN), or exfiltration through DNS itself are not prevented.
-- **Volume mounts expose host files.** Any path listed under `volumes` is directly accessible inside the sandbox.
-  Sensitive files (SSH keys, API tokens, config files) mounted into the container can be read or exfiltrated to allowed
-  domains. Mount with `:ro` where possible and avoid mounting credentials you don't need. If you mount a Git SSH key,
-  use a dedicated key with the narrowest repository or project scope you can enforce instead of a broader personal key.
-- **No syscall filtering.** The sandbox container runs with Docker's default seccomp profile but no additional
-  restrictions. It is not equivalent to a VM-level isolation boundary like gVisor or Firecracker.
-- **Example configs are intentionally permissive.** The files in `examples/` disable host key checking, approval
-  prompts, and TLS verification for convenience in disposable environments. **Do not use them outside a sandbox.**
-- **Proxy bypass.** If the sandbox container gains the ability to manipulate its own network namespace or routes
-  (e.g., via `CAP_NET_ADMIN`), it could bypass the proxy entirely. The default Docker capability set does not grant
-  this, but custom images or runtime flags could.
+- **Docker-in-Docker runs privileged.** The DinD sidecar requires `--privileged`, which grants full
+  host kernel access to that container. It is isolated on the internal network, but a container
+  escape from DinD could compromise the host. Only set `docker: true` when you need it.
+- **Domain filtering is not bulletproof.** The Squid proxy filters by domain name, not by IP. DNS
+  rebinding, tunneling over allowed domains (e.g., via a compromised CDN), or exfiltration through
+  DNS itself are not prevented.
+- **Volume mounts expose host files.** Any path listed under `volumes` is directly accessible
+  inside the sandbox. Sensitive files (SSH keys, API tokens, config files) mounted into the
+  container can be read or exfiltrated to allowed domains. Mount with `:ro` where possible and avoid
+  mounting credentials you don't need. If you mount a Git SSH key, use a dedicated key with the
+  narrowest repository or project scope you can enforce instead of a broader personal key.
+- **No syscall filtering.** The sandbox container runs with Docker's default seccomp profile but no
+  additional restrictions. It is not equivalent to a VM-level isolation boundary like gVisor or
+  Firecracker.
+- **Example configs are intentionally permissive.** The files in `examples/` disable host key
+  checking, approval prompts, and TLS verification for convenience in disposable environments.
+  **Do not use them outside a sandbox.**
+- **Proxy bypass.** If the sandbox container gains the ability to manipulate its own network
+  namespace or routes (e.g., via `CAP_NET_ADMIN`), it could bypass the proxy entirely. The default
+  Docker capability set does not grant this, but custom images or runtime flags could.

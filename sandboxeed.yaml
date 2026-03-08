@@ -3,32 +3,7 @@ sandbox:
     dockerfile: Dockerfile.sandbox
   image: sandboxeed-sandbox
   volumes:
-    - ~/.claude:/home/node/.claude
-    - ~/.codex:/home/node/.codex
-    - ~/.claude.json:/home/node/.claude.json
-    - ~/.config/opencode:/home/node/.config/opencode
-    - ~/.local/share/opencode/:/home/node/.local/share/opencode/
-    - ~/.gemini:/home/node/.gemini
-    - ~/.gitconfig:/home/node/.gitconfig:ro
-    - ~/.ssh/ai_agent_key:/home/node/.ssh/id_rsa:ro
     - ./examples/git.conf:/home/node/.ssh/config:ro
     - ./examples/claude/settings.json:/home/node/.claude/settings.json
     - ./examples/codex/config.toml:/home/node/.codex/config.toml
-  environment:
-    - DISABLE_AUTOUPDATER=1
   docker: true
-  domains:
-    - .github.com
-    - .githubusercontent.com
-    - .npmjs.org
-    - .anthropic.com
-    - .claude.ai
-    - .openai.com
-    - .chatgpt.com
-    - .openrouter.ai
-    - .googleapis.com
-    - .google.com
-    - .golang.org
-    - .docker.com
-    - .docker.io
-    - .cloudflarestorage.com
