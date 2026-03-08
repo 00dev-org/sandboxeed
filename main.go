@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base32"
 	"errors"
 	"fmt"
 	"io"
@@ -16,6 +18,7 @@ import (
 	"regexp"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -162,7 +165,7 @@ func printHelp() {
 	fmt.Printf(`sandboxeed
 
 Usage:
-  sandboxeed [--build] [command] [args...]
+  sandboxeed [--build] [--no-docker] [command] [args...]
   sandboxeed version
   sandboxeed help
   sandboxeed cleanup
@@ -173,7 +176,8 @@ Commands:
   cleanup   Force-remove sandboxeed containers, networks, and volumes after confirmation.
 
 Flags:
-  --build   Build the sandbox image; if a command is provided, run it afterward.
+  --build      Build the sandbox image; if a command is provided, run it afterward.
+  --no-docker  Skip Docker-in-Docker even if docker: true is set in the config.
 `)
 }
 
@@ -206,6 +210,7 @@ type runResources struct {
 
 func run() int {
 	build := false
+	noDocker := false
 	command := ""
 	var args []string
 
@@ -213,6 +218,8 @@ func run() int {
 		switch os.Args[i] {
 		case "--build":
 			build = true
+		case "--no-docker":
+			noDocker = true
 		default:
 			if command == "" {
 				command = os.Args[i]
@@ -238,6 +245,9 @@ func run() int {
 	if err != nil {
 		stderrf("failed to load config: %v\n", err)
 		return 1
+	}
+	if noDocker {
+		cfg.Sandbox.Docker = false
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -479,19 +489,27 @@ func networkProjectName(dir string) string {
 	return fmt.Sprintf("%s-%x", project, sum[:4])
 }
 
+func newRunToken() string {
+	var buf [5]byte
+	if _, err := rand.Read(buf[:]); err != nil {
+		return strings.ToLower(strconv.FormatInt(time.Now().UnixNano(), 36))
+	}
+	return strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(buf[:]))
+}
+
 func newRunResources(dir string) *runResources {
 	project := networkProjectName(dir)
-	suffix := fmt.Sprintf("%d-%d", time.Now().UnixNano(), os.Getpid())
+	runToken := newRunToken()
 	return &runResources{
 		projectDir:       dir,
 		projectName:      project,
-		sandboxContainer: fmt.Sprintf("%s-sandbox-%s", project, suffix),
-		proxyContainer:   fmt.Sprintf("%s-proxy-%s", project, suffix),
-		proxyConfigVol:   fmt.Sprintf("%s-proxy-config-%s", project, suffix),
-		dindContainer:    fmt.Sprintf("%s-dind-%s", project, suffix),
-		dindVolume:       fmt.Sprintf("%s-dind-data-%s", project, suffix),
-		internalNetwork:  fmt.Sprintf("%s-internal-%s", project, suffix),
-		egressNetwork:    fmt.Sprintf("%s-egress-%s", project, suffix),
+		sandboxContainer: fmt.Sprintf("%s-sandbox-%s", project, runToken),
+		proxyContainer:   fmt.Sprintf("%s-proxy-%s", project, runToken),
+		proxyConfigVol:   fmt.Sprintf("%s-proxy-config-%s", project, runToken),
+		dindContainer:    fmt.Sprintf("%s-dind-%s", project, runToken),
+		dindVolume:       fmt.Sprintf("%s-dind-data-%s", project, runToken),
+		internalNetwork:  fmt.Sprintf("%s-internal-%s", project, runToken),
+		egressNetwork:    fmt.Sprintf("%s-egress-%s", project, runToken),
 	}
 }
 

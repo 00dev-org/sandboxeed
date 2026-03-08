@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -147,6 +148,37 @@ func TestNetworkProjectNameIsDeterministic(t *testing.T) {
 	other := networkProjectName("/tmp/example/other")
 	if got1 == other {
 		t.Fatalf("networkProjectName() should differ for different dirs: %q", got1)
+	}
+}
+
+func TestNewRunTokenProducesCompactHexString(t *testing.T) {
+	got := newRunToken()
+
+	if !regexp.MustCompile(`^[a-z2-7]{8}$`).MatchString(got) {
+		t.Fatalf("newRunToken() = %q, want 8 lowercase base32 characters", got)
+	}
+}
+
+func TestNewRunResourcesUsesShortNames(t *testing.T) {
+	got := newRunResources("/tmp/sandboxeed")
+
+	if !strings.HasPrefix(got.sandboxContainer, "sandboxeed-") {
+		t.Fatalf("sandboxContainer = %q, want sandboxeed- prefix", got.sandboxContainer)
+	}
+
+	wantPatterns := map[string]string{
+		got.sandboxContainer: `^sandboxeed-[0-9a-f]{8}-sandbox-[a-z2-7]{8}$`,
+		got.proxyContainer:   `^sandboxeed-[0-9a-f]{8}-proxy-[a-z2-7]{8}$`,
+		got.proxyConfigVol:   `^sandboxeed-[0-9a-f]{8}-proxy-config-[a-z2-7]{8}$`,
+		got.dindContainer:    `^sandboxeed-[0-9a-f]{8}-dind-[a-z2-7]{8}$`,
+		got.dindVolume:       `^sandboxeed-[0-9a-f]{8}-dind-data-[a-z2-7]{8}$`,
+		got.internalNetwork:  `^sandboxeed-[0-9a-f]{8}-internal-[a-z2-7]{8}$`,
+		got.egressNetwork:    `^sandboxeed-[0-9a-f]{8}-egress-[a-z2-7]{8}$`,
+	}
+	for value, pattern := range wantPatterns {
+		if !regexp.MustCompile(pattern).MatchString(value) {
+			t.Fatalf("resource name = %q, want pattern %q", value, pattern)
+		}
 	}
 }
 

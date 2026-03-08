@@ -2,8 +2,17 @@
 
 A sandboxed container environment with filtered internet access via a Squid proxy.
 
+One consistent Docker-based sandbox for all of your AI agents.
+
+It addresses common issues across popular agent tools:
+- Claude creating empty dotfiles breaking git commands: https://github.com/anthropic-experimental/sandbox-runtime/issues/139
+- Codex not having network access when sandbox is enabled
+- No built-in sandbox in OpenCode or Copilot CLI
+- Inconsistent sandbox experience when using different AI tools.
+
 ## Requirements
 
+- Linux/macOS
 - Docker
 - Go 1.25+ (to build from source)
 
@@ -24,7 +33,7 @@ sandboxeed
 # Show command help
 sandboxeed help
 
-# Run AI agent tool
+# Run an AI agent tool
 sandboxeed claude
 
 # Run a specific command
@@ -36,6 +45,9 @@ sandboxeed --build
 # Build and run a specific command
 sandboxeed --build claude
 
+# Run without Docker-in-Docker even if docker: true is in the config
+sandboxeed --no-docker claude
+
 # Print the current app version
 sandboxeed version
 
@@ -45,9 +57,10 @@ sandboxeed cleanup
 
 ### Flags
 
-| Flag      | Description                                        |
-|-----------|----------------------------------------------------|
-| `--build` | Build the Docker image; if a command is provided, run it afterward |
+| Flag           | Description                                                                   |
+|----------------|-------------------------------------------------------------------------------|
+| `--build`      | Build the Docker image; if a command is provided, run it afterward            |
+| `--no-docker`  | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml`      |
 
 ### Arguments
 
@@ -86,21 +99,21 @@ sandbox:
   environment:                       # appended to defaults
     - MY_VAR=value
   working_dir: /workspace            # default: /workspace
-  docker: true                      # enable Docker-in-Docker support
-  domains: # Whitelisted outbound domains
+  docker: true                       # enable Docker-in-Docker support
+  domains:                           # Whitelisted outbound domains
     - github.com
     - api.example.com
-    - .docker.io              # wildcard: matches docker.io and all subdomains
+    - .docker.io                     # wildcard: matches docker.io and all subdomains
 ```
 
 ### Configuration fields
 
 | Field              | Description                                                            |
 |--------------------|------------------------------------------------------------------------|
-| `build.dockerfile` | Path to Dockerfile. Used by `--build`, and also for automatic builds when the configured image tag does not exist locally. Defaults to `Dockerfile` only when `--build` is used without an explicit path. |
-| `image`            | Docker image to run and, with `--build`, the image tag to build. Defaults to a per-project tag like `<project>-sandboxeed`; without a build config, no config still falls back to `bash:latest`. |
-| `volumes`          | Extra volume mounts prepended with `.:/workspace`. Supports `~`, `./`. |
-| `environment`      | Extra env vars prepended with proxy defaults (`HTTP_PROXY`, etc.).     |
+| `build.dockerfile` | Path to the Dockerfile. Used by `--build`, and also for automatic builds when the configured image tag does not exist locally. Defaults to `Dockerfile` only when `--build` is used without an explicit path. |
+| `image`            | Docker image to run and, with `--build`, the image tag to build. Defaults to a per-project tag like `<project>-sandboxeed`; without build config, sandboxeed falls back to `bash:latest`. |
+| `volumes`          | Extra volume mounts added after the default `.:/workspace` mount. Supports `~` and `./`. |
+| `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, etc.). |
 | `working_dir`      | Working directory inside the container. Default: `/workspace`.         |
 | `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see below).         |
 | `domains`          | Domains the sandbox is allowed to reach. All other traffic is blocked. |
@@ -131,9 +144,12 @@ If no `sandboxeed.yaml` is found, sandboxeed runs a `bash:latest` container with
 When `docker: true` is set in the config, sandboxeed starts a `docker:dind` sidecar container on the internal
 network. The sandbox container is configured to use it automatically via `DOCKER_HOST=tcp://dind:2375`.
 
-This allows running `docker` commands inside the sandbox (e.g., `docker build`, `docker run`) without granting the
+This lets you run `docker` commands inside the sandbox (for example, `docker build` and `docker run`) without granting the
 sandbox container privileged access. The DinD container itself runs privileged, but is isolated within the internal
 network — its outbound traffic goes through the Squid proxy like everything else.
+
+Starting the DinD sidecar typically adds about 10 seconds to sandbox startup time. To skip that overhead for a single
+run, use `sandboxeed --no-docker ...` even when `docker: true` is set in the config.
 
 TLS is disabled between the sandbox and DinD since they communicate over an internal-only network with no external
 routing.
@@ -167,7 +183,7 @@ boundary**. Keep the following in mind:
 - **Volume mounts expose host files.** Any path listed under `volumes` is directly accessible inside the sandbox.
   Sensitive files (SSH keys, API tokens, config files) mounted into the container can be read or exfiltrated to allowed
   domains. Mount with `:ro` where possible and avoid mounting credentials you don't need. If you mount a Git SSH key,
-  use a dedicated key with the narrowest repo or project scope you can enforce instead of a broader personal key.
+  use a dedicated key with the narrowest repository or project scope you can enforce instead of a broader personal key.
 - **No syscall filtering.** The sandbox container runs with Docker's default seccomp profile but no additional
   restrictions. It is not equivalent to a VM-level isolation boundary like gVisor or Firecracker.
 - **Example configs are intentionally permissive.** The files in `examples/` disable host key checking, approval

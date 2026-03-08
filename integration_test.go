@@ -116,9 +116,9 @@ func buildSandboxeedBinary(t *testing.T) string {
 func workspaceTempDir(t *testing.T) string {
 	t.Helper()
 
-	dir, err := os.MkdirTemp(testRootDir(t), "sandboxeed-int-")
+	dir, err := os.MkdirTemp("", "sandboxeed-int-")
 	if err != nil {
-		t.Fatalf("MkdirTemp(%q) error = %v", testRootDir(t), err)
+		t.Fatalf("MkdirTemp() error = %v", err)
 	}
 	t.Cleanup(func() {
 		_ = os.RemoveAll(dir)
