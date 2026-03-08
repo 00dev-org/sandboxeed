@@ -30,32 +30,7 @@ type runResources struct {
 }
 
 func defaultSandboxImage(projectDir string) string {
-	project := strings.ToLower(filepath.Base(projectDir))
-	project = strings.TrimSpace(project)
-	if project == "" || project == "." || project == string(filepath.Separator) {
-		project = "workspace"
-	}
-
-	var b strings.Builder
-	lastDash := false
-	for _, r := range project {
-		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-'
-		if valid {
-			b.WriteRune(r)
-			lastDash = false
-			continue
-		}
-		if !lastDash {
-			b.WriteByte('-')
-			lastDash = true
-		}
-	}
-
-	name := strings.Trim(b.String(), "-")
-	if name == "" {
-		name = "workspace"
-	}
-	return name + "-sandboxeed"
+	return sanitizeProjectName(filepath.Base(projectDir)) + "-sandboxeed"
 }
 
 func expandVolumeSpec(projectDir, spec string) string {
@@ -86,9 +61,37 @@ func expandVolumeSpec(projectDir, spec string) string {
 }
 
 func networkProjectName(dir string) string {
-	project := filepath.Base(dir)
+	project := sanitizeProjectName(filepath.Base(dir))
 	sum := sha256.Sum256([]byte(dir))
 	return fmt.Sprintf("%s-%x", project, sum[:4])
+}
+
+func sanitizeProjectName(project string) string {
+	project = strings.ToLower(strings.TrimSpace(project))
+	if project == "" || project == "." || project == string(filepath.Separator) {
+		project = "workspace"
+	}
+
+	var b strings.Builder
+	lastDash := false
+	for _, r := range project {
+		valid := (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '.' || r == '_' || r == '-'
+		if valid {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+
+	name := strings.Trim(b.String(), "-")
+	if name == "" {
+		return "workspace"
+	}
+	return name
 }
 
 func newRunToken() string {

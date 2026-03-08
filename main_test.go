@@ -293,6 +293,17 @@ func TestNetworkProjectNameIsDeterministic(t *testing.T) {
 	}
 }
 
+func TestNetworkProjectNameSanitizesProjectBasename(t *testing.T) {
+	got := networkProjectName("/tmp/example/My Project")
+
+	if !strings.HasPrefix(got, "my-project-") {
+		t.Fatalf("networkProjectName() = %q, want sanitized prefix %q", got, "my-project-")
+	}
+	if strings.ContainsAny(got, " /") {
+		t.Fatalf("networkProjectName() = %q, want no spaces or path separators", got)
+	}
+}
+
 func TestNewRunTokenProducesCompactHexString(t *testing.T) {
 	got := newRunToken()
 
