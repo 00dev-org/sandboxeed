@@ -7,6 +7,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     jq \
     ripgrep \
+    corkscrew \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /workspace /home/node/.codex /usr/local/share/npm-global && \

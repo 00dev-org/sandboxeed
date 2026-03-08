@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     procps \
     sudo \
+    corkscrew \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /workspace /home/node/.claude /home/node/.local/bin /home/node/.local/share && \

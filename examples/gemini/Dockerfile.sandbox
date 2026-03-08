@@ -5,6 +5,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     procps \
     sudo \
+    corkscrew \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /workspace /home/node/.gemini /usr/local/share/npm-global && \

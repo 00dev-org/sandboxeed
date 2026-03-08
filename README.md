@@ -79,10 +79,10 @@ sandboxeed cleanup
 
 ### Flags
 
-| Flag          | Description                                                              |
-|---------------|--------------------------------------------------------------------------|
-| `--build`     | Build the Docker image; if a command is provided, run it afterward       |
-| `--no-docker` | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml` |
+| Flag          | Description                                                                              |
+|---------------|------------------------------------------------------------------------------------------|
+| `--build`     | Build the Docker image (always `--no-cache`); if a command is provided, run it afterward |
+| `--no-docker` | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml`                 |
 
 ### Built-in commands
 
@@ -104,10 +104,13 @@ regardless.
 
 When you run `sandboxeed`:
 
-1. A Squid proxy container starts with an allowlist of the domains you configured.
-2. The sandbox container starts connected to an internal Docker network — all outbound traffic goes
+1. If `github.com` or `.github.com` is in your `domains` list, GitHub's current SSH host keys are
+   fetched from the GitHub API and injected into the sandbox at `/etc/ssh/` alongside an SSH config
+   that routes `github.com` through the proxy via `corkscrew`.
+2. A Squid proxy container starts with an allowlist of the domains you configured.
+3. The sandbox container starts connected to an internal Docker network — all outbound traffic goes
    through the proxy, and everything not on your domain list is blocked.
-3. When the sandbox exits, sandboxeed removes the proxy, sandbox, any DinD sidecar, and all
+4. When the sandbox exits, sandboxeed removes the proxy, sandbox, any DinD sidecar, and all
    per-run networks and volumes.
 
 Each run uses uniquely named containers, networks, and volumes, so a crashed or interrupted run
@@ -140,7 +143,7 @@ sandbox:
     - MY_VAR=value
   working_dir: /workspace            # default: /workspace
   docker: true                       # enable Docker-in-Docker support
-  domains:                           # whitelisted outbound domains
+  domains: # whitelisted outbound domains
     - github.com
     - api.example.com
     - .docker.io                     # matches docker.io and all subdomains
@@ -148,15 +151,15 @@ sandbox:
 
 ### Configuration fields
 
-| Field              | Description                                                                                                                                                                                                   |
-|--------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Field              | Description                                                                                                                                                                                      |
+|--------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `build.dockerfile` | Path to the Dockerfile. Used by `--build` and for automatic builds when the configured image tag is not found locally. Defaults to `Dockerfile` when `--build` is used without an explicit path. |
-| `image`            | Required when `sandboxeed.yaml` is present. The Docker image to run (and to tag when using `--build`).                                                                                                    |
-| `volumes`          | Extra volume mounts added after the default `.:/workspace` mount. Supports `~`, `./`, and `../` path prefixes. When multiple entries target the same container path, the last config layer wins.           |
-| `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`). When the same variable appears more than once, the last config layer wins.                           |
-| `working_dir`      | Working directory inside the container. Default: `/workspace`.                                                                                                                                                |
-| `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see [Docker-in-Docker](#docker-in-docker)).                                                                                                               |
-| `domains`          | Domains the sandbox is allowed to reach. All other outbound traffic is blocked. User and project domains are combined and deduplicated.                                                                     |
+| `image`            | Required when `sandboxeed.yaml` is present. The Docker image to run (and to tag when using `--build`).                                                                                           |
+| `volumes`          | Extra volume mounts added after the default `.:/workspace` mount. Supports `~`, `./`, and `../` path prefixes. When multiple entries target the same container path, the last config layer wins. |
+| `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`). When the same variable appears more than once, the last config layer wins.                 |
+| `working_dir`      | Working directory inside the container. Default: `/workspace`.                                                                                                                                   |
+| `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see [Docker-in-Docker](#docker-in-docker)).                                                                                                   |
+| `domains`          | Domains the sandbox is allowed to reach. All other outbound traffic is blocked. User and project domains are combined and deduplicated.                                                          |
 
 ### User config
 
@@ -169,10 +172,13 @@ Keep personal defaults in `~/.sandboxeed.yaml`. Only these fields are supported 
 Fields such as `image`, `build`, `working_dir`, and `docker` belong in the project config.
 sandboxeed will report an error if they appear in the user config.
 
-Use it to avoid committing user-dependent changes to the project repository and to avoid repetition across multiple projects.
-For example: mount configurations for AI agents you use, set common environment variables, or whitelist commonly used domains.
+Use it to avoid committing user-dependent changes to the project repository and to avoid repetition across multiple
+projects.
+For example: mount configurations for AI agents you use, set common environment variables, or whitelist commonly used
+domains.
 
 User config:
+
 ```yaml
 # ~/.sandboxeed.yaml
 sandbox:
@@ -183,7 +189,9 @@ sandbox:
   domains:
     - api.openai.com
 ```
+
 Project config:
+
 ```yaml
 # ./sandboxeed.yaml
 sandbox:
@@ -204,12 +212,12 @@ In the example above, the project config overrides the `/home/node/.gitconfig` m
 
 For a ready-to-use starting point, copy the files for your agent from [`examples/`](examples/README.md):
 
-| Agent | Files |
-|-------|-------|
+| Agent                           | Files                                                    |
+|---------------------------------|----------------------------------------------------------|
 | [Claude Code](examples/claude/) | `Dockerfile.sandbox`, `sandboxeed.yaml`, `settings.json` |
-| [Codex CLI](examples/codex/) | `Dockerfile.sandbox`, `sandboxeed.yaml`, `config.toml` |
-| [Gemini CLI](examples/gemini/) | `Dockerfile.sandbox`, `sandboxeed.yaml` |
-| [OpenCode](examples/opencode/) | `Dockerfile.sandbox`, `sandboxeed.yaml` |
+| [Codex CLI](examples/codex/)    | `Dockerfile.sandbox`, `sandboxeed.yaml`, `config.toml`   |
+| [Gemini CLI](examples/gemini/)  | `Dockerfile.sandbox`, `sandboxeed.yaml`                  |
+| [OpenCode](examples/opencode/)  | `Dockerfile.sandbox`, `sandboxeed.yaml`                  |
 
 These are project-agnostic starters. You will typically need to add language runtimes, package
 managers, SDKs, or extra allowed domains for your actual project.
@@ -221,6 +229,35 @@ If no `sandboxeed.yaml` is found, sandboxeed runs a `bash:latest` container with
 - Current directory mounted at `/workspace`
 - Proxy environment variables set (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`)
 - No outbound internet access (all traffic blocked by the proxy)
+
+## Dockerfile requirements
+
+sandboxeed injects several things into the sandbox at runtime — your Dockerfile does not need to
+set these up:
+
+| What              | Where                                   | Notes                                                                                                                                                     |
+|-------------------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| SSH client config | `/etc/ssh/ssh_config`                   | Only when `github.com` or `.github.com` is in `domains`. Routes `github.com` through the proxy via `corkscrew`; overwrites any existing file at that path |
+| GitHub host keys  | `/etc/ssh/ssh_known_hosts`              | Only when `github.com` or `.github.com` is in `domains`. Fetched from the GitHub API at startup; `StrictHostKeyChecking yes`                              |
+| Proxy env vars    | `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | Set for every run; `NO_PROXY` includes `dind` when `docker: true` so the Docker client bypasses the proxy when talking to the daemon                      |
+| Docker socket     | `DOCKER_HOST=tcp://dind:2375`           | Only when `docker: true`; points at the DinD sidecar                                                                                                      |
+| Project mount     | `.:/workspace`                          | Current directory, always mounted                                                                                                                         |
+
+**What your Dockerfile must provide:**
+
+- **`corkscrew`** — required when `github.com` or `.github.com` is in `domains`. Used to tunnel
+  SSH through the HTTP proxy; without it, `git clone` via SSH will fail.
+- **`docker` CLI** — required when `docker: true` is set. The DinD sidecar provides the daemon but
+  the client must be present in the image.
+
+**Recommended patterns:**
+
+- Create `/workspace` and `chown` it to the runtime user so the default volume mount is writable.
+- Install your tools and runtimes as root, then switch to a non-root user with `USER` before the
+  `CMD`. The injected files at `/etc/ssh/` only need to be readable, so no root access is required
+  at runtime.
+- If a tool does not respect `HTTP_PROXY`/`HTTPS_PROXY`, configure its proxy settings explicitly in
+  the Dockerfile (for example, npm's `proxy` config or a tool-specific config file).
 
 ## Docker-in-Docker
 

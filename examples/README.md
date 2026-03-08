@@ -8,10 +8,6 @@ All of these example configs are highly insecure outside sandboxed or otherwise 
 
 ## Files
 
-### `git.conf`
-
-SSH config snippet for connecting to GitHub through an HTTP proxy with `corkscrew`. It also disables host key checks, which is convenient for constrained environments but less strict from a security perspective.
-
 ### `claude/`
 
 Claude Code examples:
@@ -25,6 +21,12 @@ Codex CLI examples:
 - `Dockerfile.sandbox` installs `@openai/codex`.
 - `sandboxeed.yaml` mounts Codex config and allows OpenAI domains.
 - `config.toml` is a minimal permissive Codex configuration example.
+
+> **Note:** `config.toml` sets `shell_environment_policy.include_only`, which is a strict
+> allowlist — Codex strips every environment variable not listed there before running shell
+> commands. If a variable isn't in `include_only`, it won't be visible to anything Codex runs,
+> regardless of how it was set. Make sure any environment variable you rely on (API keys, custom
+> vars set via `sandboxeed.yaml`, etc.) is listed there.
 
 ### `gemini/`
 

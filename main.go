@@ -173,6 +173,21 @@ func run() int {
 	}
 	defer removePath(filepath.Dir(confPath))
 
+	var sshConfigPath, sshKnownHostsPath string
+	if needsGitHubSSH(cfg.Sandbox.Domains) {
+		sp := startSpinner("Fetching GitHub host keys")
+		sshConfigPath, sshKnownHostsPath, err = writeSSHFiles()
+		sp.Stop()
+		if err != nil {
+			if ctx.Err() != nil {
+				return 0
+			}
+			stderrf("failed to prepare SSH config: %v\n", err)
+			return 1
+		}
+		defer removePath(filepath.Dir(sshConfigPath))
+	}
+
 	if err := startProxy(rt, resources, confPath); err != nil {
 		if ctx.Err() != nil {
 			return 0
@@ -191,7 +206,7 @@ func run() int {
 		}
 	}
 
-	sandboxErr := runSandbox(rt, resources, cfg, build, command, args)
+	sandboxErr := runSandbox(rt, resources, cfg, build, sshConfigPath, sshKnownHostsPath, command, args)
 	if ctx.Err() != nil {
 		return 0
 	}

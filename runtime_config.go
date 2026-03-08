@@ -16,8 +16,12 @@ var defaultDockerEnvironment = []string{
 
 const defaultWorkingDir = "/workspace"
 
-func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built bool, command string, extraArgs []string) error {
-	volumes := make([]string, 0, len(defaultVolumes)+len(cfg.Sandbox.Volumes))
+func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built bool, sshConfigPath, sshKnownHostsPath, command string, extraArgs []string) error {
+	volumes := make([]string, 0, 2+len(defaultVolumes)+len(cfg.Sandbox.Volumes))
+	if sshConfigPath != "" {
+		volumes = append(volumes, sshConfigPath+":/etc/ssh/ssh_config:ro")
+		volumes = append(volumes, sshKnownHostsPath+":/etc/ssh/ssh_known_hosts:ro")
+	}
 	volumes = append(volumes, defaultVolumes...)
 	volumes = append(volumes, cfg.Sandbox.Volumes...)
 

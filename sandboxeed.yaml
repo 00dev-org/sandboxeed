@@ -3,7 +3,6 @@ sandbox:
     dockerfile: Dockerfile.sandbox
   image: sandboxeed-sandbox
   volumes:
-    - ./examples/git.conf:/home/node/.ssh/config:ro
     - ./examples/claude/settings.json:/home/node/.claude/settings.json
     - ./examples/codex/config.toml:/home/node/.codex/config.toml
   docker: true
