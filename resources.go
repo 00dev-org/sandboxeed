@@ -60,6 +60,38 @@ func expandVolumeSpec(projectDir, spec string) string {
 	return filepath.Clean(host) + ":" + rest
 }
 
+// forceReadOnly ensures a volume spec has the :ro option set.
+// Specs already containing :ro are returned unchanged.
+func forceReadOnly(spec string) string {
+	host, rest, ok := strings.Cut(spec, ":")
+	if !ok {
+		return spec
+	}
+	container, opts, hasOpts := strings.Cut(rest, ":")
+	if !hasOpts {
+		return host + ":" + container + ":ro"
+	}
+	for _, opt := range strings.Split(opts, ",") {
+		if opt == "ro" {
+			return spec
+		}
+	}
+	// Replace rw with ro if present, otherwise append ro.
+	replaced := false
+	parts := strings.Split(opts, ",")
+	for i, opt := range parts {
+		if opt == "rw" {
+			parts[i] = "ro"
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		parts = append(parts, "ro")
+	}
+	return host + ":" + container + ":" + strings.Join(parts, ",")
+}
+
 func networkProjectName(dir string) string {
 	project := sanitizeProjectName(filepath.Base(dir))
 	sum := sha256.Sum256([]byte(dir))

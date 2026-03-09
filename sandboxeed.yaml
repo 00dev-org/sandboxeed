@@ -2,7 +2,4 @@ sandbox:
   build:
     dockerfile: Dockerfile.sandbox
   image: sandboxeed-sandbox
-  volumes:
-    - ./examples/claude/settings.json:/home/node/.claude/settings.json
-    - ./examples/codex/config.toml:/home/node/.codex/config.toml
   docker: true

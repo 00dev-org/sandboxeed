@@ -359,6 +359,29 @@ func TestExpandVolumeSpec(t *testing.T) {
 	}
 }
 
+func TestForceReadOnly(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "no options", in: "/host:/container", want: "/host:/container:ro"},
+		{name: "already ro", in: "/host:/container:ro", want: "/host:/container:ro"},
+		{name: "replace rw", in: "/host:/container:rw", want: "/host:/container:ro"},
+		{name: "preserve other opts", in: "/host:/container:cached", want: "/host:/container:cached,ro"},
+		{name: "rw with other opts", in: "/host:/container:rw,cached", want: "/host:/container:ro,cached"},
+		{name: "no colon", in: "named-volume", want: "named-volume"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := forceReadOnly(tc.in); got != tc.want {
+				t.Fatalf("forceReadOnly(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestSandboxImageNamePrefersConfiguredImage(t *testing.T) {
 	cfg := &Config{}
 	cfg.Sandbox.Image = "custom-sandbox:dev"

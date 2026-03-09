@@ -4,8 +4,6 @@ sandbox:
   image: sandboxeed-codex-example
   volumes:
     - ~/.codex:/home/node/.codex
-    - ~/.gitconfig:/home/node/.gitconfig:ro
-    - ./config.toml:/home/node/.codex/config.toml
   domains:
     - .github.com
     - .githubusercontent.com

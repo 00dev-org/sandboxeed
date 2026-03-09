@@ -8,6 +8,10 @@ All of these example configs are highly insecure outside sandboxed or otherwise 
 
 ## Files
 
+### `.sandboxeed.yaml`
+
+A global [user config](../README.md#user-config) file that should be saved to `~/.sandboxeed.yaml`. It pre-configures volumes, environment variables, and allowed domains shared across all tools (Claude Code, Codex, Gemini, OpenCode). Use this alongside the tool-specific config files below (`settings.json`, `config.toml`, etc.), which should be saved under `~/.sandboxeed/` and mounted into the sandbox via the user config (e.g., `~/.sandboxeed/.claude/settings.json`, `~/.sandboxeed/.codex/config.toml`).
+
 ### `claude/`
 
 Claude Code examples:
@@ -42,12 +46,25 @@ OpenCode examples:
 
 ## How to use them
 
-Copy the files for the agent you want into your project root, then edit them for your project:
+Copy `.sandboxeed.yaml` to your home directory as the global user config, along with any tool-specific config files:
+
+```bash
+cp examples/.sandboxeed.yaml ~/.sandboxeed.yaml
+
+# Claude Code config
+mkdir -p ~/.sandboxeed/.claude
+cp examples/claude/settings.json ~/.sandboxeed/.claude/settings.json
+
+# Codex config
+mkdir -p ~/.sandboxeed/.codex
+cp examples/codex/config.toml ~/.sandboxeed/.codex/config.toml
+```
+
+Then copy the project files for your agent into your project root:
 
 ```bash
 cp examples/codex/Dockerfile.sandbox ./Dockerfile.sandbox
 cp examples/codex/sandboxeed.yaml ./sandboxeed.yaml
-cp examples/codex/config.toml ./config.toml
 ```
 
 These examples are intentionally project-agnostic starters. You will usually need to add your own language runtimes, package managers, SDKs, or extra allowed domains.

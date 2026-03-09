@@ -4,7 +4,6 @@ sandbox:
   image: sandboxeed-gemini-example
   volumes:
     - ~/.gemini:/home/node/.gemini
-    - ~/.gitconfig:/home/node/.gitconfig:ro
   domains:
     - .github.com
     - .githubusercontent.com

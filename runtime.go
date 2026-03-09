@@ -33,6 +33,7 @@ type RunOpts struct {
 	Image      string
 	Cmd        []string
 	Privileged bool
+	User       string // passed as --user (e.g. "1000:1000")
 }
 
 // ContainerRuntime abstracts container engine operations.
@@ -261,6 +262,9 @@ func runArgs(opts RunOpts) []string {
 	}
 	for k, v := range opts.Labels {
 		args = append(args, "--label", k+"="+v)
+	}
+	if opts.User != "" {
+		args = append(args, "--user", opts.User)
 	}
 	if opts.WorkDir != "" {
 		args = append(args, "-w", opts.WorkDir)

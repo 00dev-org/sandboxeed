@@ -42,7 +42,7 @@ func printHelp() {
 	fmt.Printf(`sandboxeed
 
 Usage:
-  sandboxeed [--build] [--no-docker] [command] [args...]
+  sandboxeed [--build] [--no-docker] [--read-only] [command] [args...]
   sandboxeed version
   sandboxeed help
   sandboxeed cleanup
@@ -53,8 +53,9 @@ Commands:
   cleanup   List and remove sandboxeed containers, networks, and volumes (with confirmation).
 
 Flags:
-  --build      Build the sandbox image; if a command is provided, run it afterward.
-  --no-docker  Skip Docker-in-Docker even if docker: true is set in the config.
+  --build       Build the sandbox image; if a command is provided, run it afterward.
+  --no-docker   Skip Docker-in-Docker even if docker: true is set in the config.
+  --read-only   Mount all volumes as read-only inside the sandbox.
 `)
 }
 
@@ -65,6 +66,7 @@ func main() {
 func run() int {
 	build := false
 	noDocker := false
+	readOnly := false
 	command := ""
 	var args []string
 
@@ -74,6 +76,8 @@ func run() int {
 			build = true
 		case "--no-docker":
 			noDocker = true
+		case "--read-only":
+			readOnly = true
 		default:
 			if command == "" {
 				command = os.Args[i]
@@ -210,7 +214,7 @@ func run() int {
 		}
 	}
 
-	sandboxErr := runSandbox(rt, resources, cfg, build, sshConfigPath, sshKnownHostsPath, command, args)
+	sandboxErr := runSandbox(rt, resources, cfg, build, readOnly, sshConfigPath, sshKnownHostsPath, command, args)
 	if ctx.Err() != nil {
 		return 0
 	}

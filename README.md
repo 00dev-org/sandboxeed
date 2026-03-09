@@ -131,6 +131,7 @@ sandboxeed cleanup
 |---------------|------------------------------------------------------------------------------------------|
 | `--build`     | Build the Docker image (always `--no-cache`); if a command is provided, run it afterward |
 | `--no-docker` | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml`                 |
+| `--read-only` | Mount all volumes (including the project directory) as read-only inside the sandbox      |
 
 ### Built-in commands
 
@@ -231,11 +232,20 @@ User config:
 # ~/.sandboxeed.yaml
 sandbox:
   volumes:
+    - ~/.claude:/home/node/.claude
+    - ~/.claude.json:/home/node/.claude.json
+    - ~/.sandboxeed/.claude/settings.json:/home/node/.claude/settings.json
+    - ~/.codex:/home/node/.codex
+    - ~/.sandboxeed/.codex/config.toml:/home/node/.codex/config.toml
     - ~/.gitconfig:/home/node/.gitconfig:ro
   environment:
-    - OPENAI_API_KEY=from-user-config
+    - DISABLE_AUTOUPDATER=1
   domains:
-    - api.openai.com
+    - .anthropic.com
+    - .claude.ai
+    - .claude.com
+    - .openai.com
+    - .chatgpt.com
 ```
 
 Project config:
@@ -243,29 +253,38 @@ Project config:
 ```yaml
 # ./sandboxeed.yaml
 sandbox:
+  build:
+    dockerfile: Dockerfile.sandbox
   image: my-custom-image:latest
   environment:
-    - OPENAI_API_KEY=from-project-config   # overrides the user config value
-  volumes:
-    - ./gitconfig:/home/node/.gitconfig:ro  # overrides the user config mount for the same path
+    - ENV=DEV # overrides the user config value
   domains:
-    - github.com                            # combined with api.openai.com from user config
+    - .github.com # combined with api.openai.com from user config
 ```
 
-In the example above, the project config overrides the `/home/node/.gitconfig` mount and the
-`OPENAI_API_KEY` value, while the final allowed domain list includes both `api.openai.com` and
-`github.com`.
+In the example above, the final allowed domain list includes `.anthropic.com`, `.claude.ai`,
+`.claude.com`, `.openai.com`, `.chatgpt.com` from the user config and `.github.com` from the
+project config. The `ENV` variable is set only by the project config; user-level volumes and
+`DISABLE_AUTOUPDATER` carry through unchanged.
 
 ### Agent examples
 
 For a ready-to-use starting point, copy the files for your agent from [`examples/`](examples/README.md):
 
-| Agent                           | Files                                                    |
+| File                                            | Scope  | Description                                                        |
+|-------------------------------------------------|--------|--------------------------------------------------------------------|
+| [`.sandboxeed.yaml`](examples/.sandboxeed.yaml) | Global | User config (`~/.sandboxeed.yaml`) with shared volumes and domains |
+
+| Agent                           | Project files                                            |
 |---------------------------------|----------------------------------------------------------|
 | [Claude Code](examples/claude/) | `Dockerfile.sandbox`, `sandboxeed.yaml`, `settings.json` |
 | [Codex CLI](examples/codex/)    | `Dockerfile.sandbox`, `sandboxeed.yaml`, `config.toml`   |
 | [Gemini CLI](examples/gemini/)  | `Dockerfile.sandbox`, `sandboxeed.yaml`                  |
 | [OpenCode](examples/opencode/)  | `Dockerfile.sandbox`, `sandboxeed.yaml`                  |
+
+Copy `.sandboxeed.yaml` to `~/.sandboxeed.yaml` for global defaults, and tool-specific config files
+(like `settings.json` or `config.toml`) to `~/.sandboxeed/` for mounting into the sandbox.
+Per-agent `Dockerfile.sandbox` and `sandboxeed.yaml` go in your project root.
 
 These are project-agnostic starters. You will typically need to add language runtimes, package
 managers, SDKs, or extra allowed domains for your actual project.
@@ -358,6 +377,8 @@ complete security boundary**. Keep the following in mind:
   configuration), or **inject** content that may be executed later on the host (e.g., shell hooks,
   MCP server entries, or custom slash commands). For stronger isolation, mount a separate,
   purpose-built config directory instead of your real one, or at minimum mount with `:ro`.
+  You can also run with `--read-only` to force all mounts (including the project directory) to
+  read-only mode.
 - **Example configs are intentionally permissive.** The files in `examples/` disable approval
   prompts and safety checks for convenience in disposable environments.
   **Do not use them outside a sandbox.**

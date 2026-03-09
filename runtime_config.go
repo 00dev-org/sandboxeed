@@ -1,6 +1,10 @@
 package main
 
-import "strings"
+import (
+	"fmt"
+	"os"
+	"strings"
+)
 
 var defaultVolumes = []string{".:/workspace"}
 var defaultEnvironment = []string{
@@ -16,7 +20,7 @@ var defaultDockerEnvironment = []string{
 
 const defaultWorkingDir = "/workspace"
 
-func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built bool, sshConfigPath, sshKnownHostsPath, command string, extraArgs []string) error {
+func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built, readOnly bool, sshConfigPath, sshKnownHostsPath, command string, extraArgs []string) error {
 	volumes := make([]string, 0, 2+len(defaultVolumes)+len(cfg.Sandbox.Volumes))
 	if sshConfigPath != "" {
 		volumes = append(volumes, sshConfigPath+":/etc/ssh/ssh_config:ro")
@@ -44,8 +48,21 @@ func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built
 	for i, v := range volumes {
 		volumes[i] = expandVolumeSpec(resources.projectDir, v)
 	}
+	if readOnly {
+		for i, v := range volumes {
+			volumes[i] = forceReadOnly(v)
+		}
+	}
 
 	image := resolvedSandboxImage(resources.projectDir, cfg, built)
+
+	// When no config file is present (bash:latest fallback), run as the
+	// current host user so files created inside /workspace are not owned by
+	// root on the host.
+	var user string
+	if cfg.Sandbox.Image == "" && !built {
+		user = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
+	}
 
 	return rt.RunInteractive(RunOpts{
 		Name:     resources.sandboxContainer,
@@ -56,6 +73,7 @@ func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built
 		WorkDir:  workingDir,
 		Image:    image,
 		Cmd:      append([]string{command}, extraArgs...),
+		User:     user,
 	})
 }
 

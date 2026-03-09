@@ -101,6 +101,220 @@ func TestIntegrationSandboxBlocksNonWhitelistedDomainViaProxy(t *testing.T) {
 	}
 }
 
+func TestIntegrationEnvironmentVariables(t *testing.T) {
+	session := startSandboxSessionWithFlags(t, "sandbox:\n  image: busybox:1.36\n  environment:\n    - SANDBOX_TEST=hello_from_config\n", "")
+
+	out, err := execInContainer(session.sandboxContainer, `sh -lc 'echo "VAR=$SANDBOX_TEST"'`)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v\noutput:\n%s", err, out)
+	}
+	if !strings.Contains(out, "VAR=hello_from_config") {
+		t.Fatalf("sandbox output missing custom env var:\n%s", out)
+	}
+}
+
+func TestIntegrationProxyEnvVars(t *testing.T) {
+	session := startSandboxSession(t, "sandbox:\n  image: busybox:1.36\n")
+
+	out, err := execInContainer(session.sandboxContainer, `sh -lc 'echo "HTTP=$HTTP_PROXY HTTPS=$HTTPS_PROXY NOPROXY=$NO_PROXY"'`)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v\noutput:\n%s", err, out)
+	}
+	if !strings.Contains(out, "HTTP=http://proxy:3128") {
+		t.Fatalf("sandbox missing HTTP_PROXY:\n%s", out)
+	}
+	if !strings.Contains(out, "HTTPS=http://proxy:3128") {
+		t.Fatalf("sandbox missing HTTPS_PROXY:\n%s", out)
+	}
+	if !strings.Contains(out, "NOPROXY=localhost,127.0.0.1") {
+		t.Fatalf("sandbox missing NO_PROXY:\n%s", out)
+	}
+}
+
+func TestIntegrationWorkingDir(t *testing.T) {
+	ensureDockerImage(t, "busybox:1.36")
+	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
+
+	projectDir := workspaceTempDir(t)
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n  working_dir: /tmp\n")
+
+	stdout, stderr, err := runSandboxeedScripted(t, projectDir, fmt.Sprintf("sh -lc %q", "pwd"))
+	if err != nil {
+		t.Fatalf("sandboxeed failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+
+	if !strings.Contains(stdout, "/tmp") {
+		t.Fatalf("sandbox working directory is not /tmp:\n%s", stdout)
+	}
+}
+
+func TestIntegrationBuildFlag(t *testing.T) {
+	ensureDockerImage(t, "busybox:1.36")
+	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
+
+	projectDir := workspaceTempDir(t)
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: sandboxeed-build-test\n  build:\n    dockerfile: Dockerfile.sandbox\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "Dockerfile.sandbox"), []byte("FROM busybox:1.36\nRUN touch /built-marker\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(Dockerfile.sandbox) error = %v", err)
+	}
+
+	// Clean up the image after the test.
+	t.Cleanup(func() {
+		_ = exec.Command("docker", "rmi", "-f", "sandboxeed-build-test").Run()
+	})
+
+	stdout, stderr, err := runSandboxeedScripted(t, projectDir, fmt.Sprintf("--build sh -lc %q", "test -f /built-marker && echo BUILD_OK"))
+	if err != nil {
+		t.Fatalf("sandboxeed --build failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+
+	if !strings.Contains(stdout, "BUILD_OK") {
+		t.Fatalf("sandbox output missing build marker:\n%s", stdout)
+	}
+}
+
+func TestIntegrationAutoBuild(t *testing.T) {
+	ensureDockerImage(t, "busybox:1.36")
+	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
+
+	projectDir := workspaceTempDir(t)
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: sandboxeed-autobuild-test\n  build:\n    dockerfile: Dockerfile.sandbox\n")
+	if err := os.WriteFile(filepath.Join(projectDir, "Dockerfile.sandbox"), []byte("FROM busybox:1.36\nRUN touch /auto-marker\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(Dockerfile.sandbox) error = %v", err)
+	}
+
+	// Ensure image does not exist so auto-build triggers.
+	_ = exec.Command("docker", "rmi", "-f", "sandboxeed-autobuild-test").Run()
+	t.Cleanup(func() {
+		_ = exec.Command("docker", "rmi", "-f", "sandboxeed-autobuild-test").Run()
+	})
+
+	stdout, stderr, err := runSandboxeedScripted(t, projectDir, fmt.Sprintf("sh -lc %q", "test -f /auto-marker && echo AUTOBUILD_OK"))
+	if err != nil {
+		t.Fatalf("sandboxeed auto-build failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+
+	if !strings.Contains(stdout, "AUTOBUILD_OK") {
+		t.Fatalf("sandbox output missing auto-build marker:\n%s", stdout)
+	}
+}
+
+func TestIntegrationVolumeMounts(t *testing.T) {
+	session := startSandboxSession(t, "sandbox:\n  image: busybox:1.36\n  volumes:\n    - /etc/hostname:/mounted-hostname:ro\n")
+
+	out, err := execInContainer(session.sandboxContainer, `sh -lc 'cat /mounted-hostname'`)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v\noutput:\n%s", err, out)
+	}
+
+	hostname := strings.TrimSpace(out)
+	if hostname == "" {
+		t.Fatalf("mounted hostname file is empty")
+	}
+}
+
+func TestIntegrationNoDockerSkipsDind(t *testing.T) {
+	session := startSandboxSessionWithFlags(t, "sandbox:\n  image: busybox:1.36\n  docker: true\n", "--no-docker")
+
+	// Verify no DinD container was created for this project.
+	containers, err := dockerOutputLines(
+		"ps", "-a",
+		"--filter", "label="+managedLabelKey+"="+managedLabelValue,
+		"--filter", "label="+projectLabelKey+"="+session.projectName,
+		"--filter", "label="+resourceLabelKey+"=dind",
+		"--format", "{{.Names}}",
+	)
+	if err != nil {
+		t.Fatalf("docker ps failed: %v", err)
+	}
+	if len(containers) > 0 {
+		t.Fatalf("DinD container should not exist with --no-docker, found: %v", containers)
+	}
+
+	// Verify DOCKER_HOST is not set.
+	out, err := execInContainer(session.sandboxContainer, `sh -lc 'echo "DHOST=${DOCKER_HOST:-unset}"'`)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v\noutput:\n%s", err, out)
+	}
+	if !strings.Contains(out, "DHOST=unset") {
+		t.Fatalf("DOCKER_HOST should not be set with --no-docker:\n%s", out)
+	}
+}
+
+func TestIntegrationCleanupRemovesOrphanedResources(t *testing.T) {
+	ensureDockerImage(t, "busybox:1.36")
+	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
+
+	projectDir := workspaceTempDir(t)
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n")
+
+	session := startSandboxSessionFromDir(t, projectDir)
+
+	// Kill the process without graceful shutdown so resources are orphaned.
+	if session.cmd != nil && session.cmd.Process != nil {
+		_ = session.cmd.Process.Kill()
+		_ = session.cmd.Wait()
+		session.cmd = nil
+	}
+
+	// Verify resources are still present.
+	resources, err := projectResources(session.projectName)
+	if err != nil {
+		t.Fatalf("projectResources() error = %v", err)
+	}
+	if len(resources) == 0 {
+		t.Fatalf("expected orphaned resources after kill, found none")
+	}
+
+	// Run cleanup with "y" piped to stdin.
+	bin := buildSandboxeedBinary(t)
+	cmd := exec.Command(bin, "cleanup")
+	cmd.Dir = projectDir
+	cmd.Stdin = strings.NewReader("y\n")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("sandboxeed cleanup failed: %v\noutput:\n%s", err, string(out))
+	}
+
+	assertNoProjectResources(t, session.projectName)
+}
+
+func TestIntegrationReadOnlyBlocksWrites(t *testing.T) {
+	ensureDockerImage(t, "busybox:1.36")
+	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
+
+	projectDir := workspaceTempDir(t)
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n")
+
+	script := "if touch /workspace/new.txt 2>/dev/null; then echo WRITE_ALLOWED; else echo READONLY_OK; fi"
+	stdout, stderr, err := runSandboxeedScripted(t, projectDir, fmt.Sprintf("--read-only sh -lc %q", script))
+	if err != nil {
+		t.Fatalf("sandboxeed --read-only failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+
+	if !strings.Contains(stdout, "READONLY_OK") {
+		t.Fatalf("sandbox was able to write to read-only mount:\n%s", stdout)
+	}
+}
+
+func TestIntegrationReadOnlyAllowsWriteToNonMountPaths(t *testing.T) {
+	ensureDockerImage(t, "busybox:1.36")
+	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
+
+	projectDir := workspaceTempDir(t)
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n")
+
+	script := "if touch /tmp/scratch.txt 2>/dev/null; then echo TMPWRITE_OK; else echo TMPWRITE_BLOCKED; fi"
+	stdout, stderr, err := runSandboxeedScripted(t, projectDir, fmt.Sprintf("--read-only sh -lc %q", script))
+	if err != nil {
+		t.Fatalf("sandboxeed --read-only failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+
+	if !strings.Contains(stdout, "TMPWRITE_OK") {
+		t.Fatalf("sandbox could not write to non-mount path:\n%s", stdout)
+	}
+}
+
 func buildSandboxeedBinary(t *testing.T) string {
 	t.Helper()
 
@@ -173,11 +387,32 @@ type sandboxSession struct {
 func startSandboxSession(t *testing.T, config string) *sandboxSession {
 	t.Helper()
 
+	return startSandboxSessionWithFlags(t, config, "")
+}
+
+func startSandboxSessionWithFlags(t *testing.T, config, flags string) *sandboxSession {
+	t.Helper()
+
 	ensureDockerImage(t, "busybox:1.36")
 	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
 
 	projectDir := workspaceTempDir(t)
 	writeSandboxConfig(t, projectDir, config)
+
+	return startSandboxSessionFromDirWithFlags(t, projectDir, flags)
+}
+
+func startSandboxSessionFromDir(t *testing.T, projectDir string) *sandboxSession {
+	t.Helper()
+
+	return startSandboxSessionFromDirWithFlags(t, projectDir, "")
+}
+
+func startSandboxSessionFromDirWithFlags(t *testing.T, projectDir, flags string) *sandboxSession {
+	t.Helper()
+
+	ensureDockerImage(t, "busybox:1.36")
+	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
 
 	session := &sandboxSession{
 		projectName: networkProjectName(projectDir),
@@ -187,7 +422,13 @@ func startSandboxSession(t *testing.T, config string) *sandboxSession {
 	}
 
 	bin := buildSandboxeedBinary(t)
-	command := fmt.Sprintf("%q sh -lc %q", bin, "trap 'exit 0' INT TERM; sleep 60")
+	shellCmd := fmt.Sprintf("trap 'exit 0' INT TERM; sleep 60")
+	var command string
+	if flags != "" {
+		command = fmt.Sprintf("%q %s sh -lc %q", bin, flags, shellCmd)
+	} else {
+		command = fmt.Sprintf("%q sh -lc %q", bin, shellCmd)
+	}
 	cmd := exec.Command("script", "-qec", command, "/dev/null")
 	cmd.Dir = projectDir
 	cmd.Stdout = session.stdout
