@@ -2,6 +2,87 @@ package main
 
 import "testing"
 
+func TestBuildArgsUsesDockerDefaults(t *testing.T) {
+	got := buildArgs(engineDocker, "Dockerfile.sandbox", "example:latest", ".")
+	want := []string{"build", "--no-cache", "-f", "Dockerfile.sandbox", "-t", "example:latest", "."}
+
+	if len(got) != len(want) {
+		t.Fatalf("buildArgs() len = %d, want %d\nargs = %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("buildArgs()[%d] = %q, want %q\nargs = %v", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestBuildArgsAddsLoadForPodman(t *testing.T) {
+	got := buildArgs(enginePodman, "Dockerfile.sandbox", "example:latest", ".")
+	want := []string{"build", "--no-cache", "-f", "Dockerfile.sandbox", "-t", "example:latest", "--load", "."}
+
+	if len(got) != len(want) {
+		t.Fatalf("buildArgs() len = %d, want %d\nargs = %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("buildArgs()[%d] = %q, want %q\nargs = %v", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestClassifyContainerEngine(t *testing.T) {
+	tests := []struct {
+		name   string
+		output string
+		want   containerEngine
+	}{
+		{name: "docker default", output: "Docker Engine - Community", want: engineDocker},
+		{name: "podman", output: "podman", want: enginePodman},
+		{name: "podman descriptive", output: "Podman Engine", want: enginePodman},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := classifyContainerEngine(tc.output); got != tc.want {
+				t.Fatalf("classifyContainerEngine(%q) = %q, want %q", tc.output, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestRemoveContainerArgs(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine containerEngine
+		want   []string
+	}{
+		{
+			name:   "docker",
+			engine: engineDocker,
+			want:   []string{"rm", "-f", "sandboxeed-test"},
+		},
+		{
+			name:   "podman",
+			engine: enginePodman,
+			want:   []string{"rm", "-f", "-t", "0", "sandboxeed-test"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := removeContainerArgs(tc.engine, "sandboxeed-test")
+			if len(got) != len(tc.want) {
+				t.Fatalf("removeContainerArgs() len = %d, want %d\nargs = %v", len(got), len(tc.want), got)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Fatalf("removeContainerArgs()[%d] = %q, want %q\nargs = %v", i, got[i], tc.want[i], got)
+				}
+			}
+		})
+	}
+}
+
 func TestRunArgsIncludesConfiguredOptions(t *testing.T) {
 	opts := RunOpts{
 		Name:       "sandboxeed-test",

@@ -60,8 +60,11 @@ only the proxy a path to the internet.
 ## Requirements
 
 - Linux/macOS
-- Docker
+- Docker or Podman (via a Docker-compatible `docker` CLI)
 - Go 1.25+ (to build from source)
+
+Podman is supported when `docker` points to a Podman-compatible CLI. On macOS, sandboxeed uses a
+Podman-specific forced container removal path during shutdown to avoid slow proxy teardown.
 
 ## Installation
 
@@ -344,23 +347,29 @@ When Docker-in-Docker is enabled, sandboxeed also creates a per-run labeled volu
 sandboxeed reduces the attack surface of running untrusted or semi-trusted code, but it is **not a
 complete security boundary**. Keep the following in mind:
 
-- **Docker-in-Docker runs privileged.** The DinD sidecar requires `--privileged`, which grants full
-  host kernel access to that container. It is isolated on the internal network, but a container
-  escape from DinD could compromise the host. Only set `docker: true` when you need it.
-- **Domain filtering is not bulletproof.** The Squid proxy filters by domain name, not by IP. DNS
-  rebinding, tunneling over allowed domains (e.g., via a compromised CDN), or exfiltration through
-  DNS itself are not prevented.
 - **Volume mounts expose host files.** Any path listed under `volumes` is directly accessible
   inside the sandbox. Sensitive files (SSH keys, API tokens, config files) mounted into the
   container can be read or exfiltrated to allowed domains. Mount with `:ro` where possible and avoid
   mounting credentials you don't need. If you mount a Git SSH key, use a dedicated key with the
   narrowest repository or project scope you can enforce instead of a broader personal key.
+  The example `sandboxeed.yaml` files mount agent config directories like `~/.claude`, `~/.codex`,
+  `~/.gemini`, and `~/.config/opencode` without `:ro`. This means a sandboxed agent can **read**
+  those files (exposing API keys and tokens stored in them), **modify** them (corrupting your
+  configuration), or **inject** content that may be executed later on the host (e.g., shell hooks,
+  MCP server entries, or custom slash commands). For stronger isolation, mount a separate,
+  purpose-built config directory instead of your real one, or at minimum mount with `:ro`.
+- **Example configs are intentionally permissive.** The files in `examples/` disable approval
+  prompts and safety checks for convenience in disposable environments.
+  **Do not use them outside a sandbox.**
+- **Domain filtering is not bulletproof.** The Squid proxy filters by domain name, not by IP. DNS
+  rebinding, tunneling over allowed domains (e.g., via a compromised CDN), or exfiltration through
+  DNS itself are not prevented.
+- **Docker-in-Docker runs privileged.** The DinD sidecar requires `--privileged`, which grants full
+  host kernel access to that container. It is isolated on the internal network, but a container
+  escape from DinD could compromise the host. Only set `docker: true` when you need it.
 - **No syscall filtering.** The sandbox container runs with Docker's default seccomp profile but no
   additional restrictions. It is not equivalent to a VM-level isolation boundary like gVisor or
   Firecracker.
-- **Example configs are intentionally permissive.** The files in `examples/` disable host key
-  checking, approval prompts, and TLS verification for convenience in disposable environments.
-  **Do not use them outside a sandbox.**
 - **Proxy bypass.** If the sandbox container gains the ability to manipulate its own network
   namespace or routes (e.g., via `CAP_NET_ADMIN`), it could bypass the proxy entirely. The default
   Docker capability set does not grant this, but custom images or runtime flags could.

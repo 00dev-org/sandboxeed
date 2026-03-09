@@ -9,6 +9,13 @@ import (
 	"time"
 )
 
+type containerEngine string
+
+const (
+	engineDocker containerEngine = "docker"
+	enginePodman containerEngine = "podman"
+)
+
 // NetworkAttachment describes a network to connect a container to.
 type NetworkAttachment struct {
 	Name  string
@@ -48,18 +55,20 @@ type ContainerRuntime interface {
 
 // DockerCLI implements ContainerRuntime by shelling out to docker.
 type DockerCLI struct {
-	ctx context.Context
+	ctx    context.Context
+	binary string
+	engine containerEngine
 }
 
 func (d *DockerCLI) Build(dockerfile, tag, contextDir string) error {
-	cmd := exec.CommandContext(d.ctx, "docker", "build", "--no-cache", "-f", dockerfile, "-t", tag, contextDir)
+	cmd := exec.CommandContext(d.ctx, d.command(), buildArgs(d.engine, dockerfile, tag, contextDir)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
 }
 
 func (d *DockerCLI) ImageExists(tag string) (bool, error) {
-	cmd := exec.CommandContext(d.ctx, "docker", "image", "inspect", tag)
+	cmd := exec.CommandContext(d.ctx, d.command(), "image", "inspect", tag)
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() != 0 {
 			return false, nil
@@ -77,7 +86,7 @@ func (d *DockerCLI) RunDetached(opts RunOpts) error {
 	}
 
 	args := append([]string{"run", "-d"}, runArgs(runOpts)...)
-	if err := exec.CommandContext(d.ctx, "docker", args...).Run(); err != nil {
+	if err := exec.CommandContext(d.ctx, d.command(), args...).Run(); err != nil {
 		return err
 	}
 
@@ -87,7 +96,7 @@ func (d *DockerCLI) RunDetached(opts RunOpts) error {
 			connectArgs = append(connectArgs, "--alias", network.Alias)
 		}
 		connectArgs = append(connectArgs, network.Name, opts.Name)
-		if err := exec.CommandContext(d.ctx, "docker", connectArgs...).Run(); err != nil {
+		if err := exec.CommandContext(d.ctx, d.command(), connectArgs...).Run(); err != nil {
 			_ = d.RemoveContainer(opts.Name)
 			return err
 		}
@@ -98,7 +107,7 @@ func (d *DockerCLI) RunDetached(opts RunOpts) error {
 
 func (d *DockerCLI) RunInteractive(opts RunOpts) error {
 	args := append([]string{"run", "--rm", "-it"}, runArgs(opts)...)
-	cmd := exec.CommandContext(d.ctx, "docker", args...)
+	cmd := exec.CommandContext(d.ctx, d.command(), args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -114,26 +123,26 @@ func (d *DockerCLI) CopyFileToVolume(volumeName, srcPath, destName string) error
 		"ubuntu/squid:latest",
 		"sh", "-c", "sleep 300",
 	}
-	if err := exec.CommandContext(d.ctx, "docker", createArgs...).Run(); err != nil {
+	if err := exec.CommandContext(d.ctx, d.command(), createArgs...).Run(); err != nil {
 		return err
 	}
 	defer func() {
-		_ = exec.Command("docker", "rm", "-f", helperName).Run()
+		_ = exec.Command(d.command(), "rm", "-f", helperName).Run()
 	}()
 
 	destPath := "/config/" + destName
-	if err := exec.CommandContext(d.ctx, "docker", "cp", srcPath, helperName+":"+destPath).Run(); err != nil {
+	if err := exec.CommandContext(d.ctx, d.command(), "cp", srcPath, helperName+":"+destPath).Run(); err != nil {
 		return err
 	}
 	return nil
 }
 
 func (d *DockerCLI) RemoveContainer(name string) error {
-	return exec.Command("docker", "rm", "-f", name).Run()
+	return exec.Command(d.command(), removeContainerArgs(d.engine, name)...).Run()
 }
 
 func (d *DockerCLI) ContainerStatus(name string) (string, error) {
-	out, err := exec.CommandContext(d.ctx, "docker", "inspect", "--format={{.State.Status}}", name).Output()
+	out, err := exec.CommandContext(d.ctx, d.command(), "inspect", "--format={{.State.Status}}", name).Output()
 	if err != nil {
 		return "", err
 	}
@@ -142,11 +151,11 @@ func (d *DockerCLI) ContainerStatus(name string) (string, error) {
 
 func (d *DockerCLI) Exec(container string, cmd ...string) error {
 	args := append([]string{"exec", container}, cmd...)
-	return exec.CommandContext(d.ctx, "docker", args...).Run()
+	return exec.CommandContext(d.ctx, d.command(), args...).Run()
 }
 
 func (d *DockerCLI) Logs(name string) error {
-	cmd := exec.CommandContext(d.ctx, "docker", "logs", name)
+	cmd := exec.CommandContext(d.ctx, d.command(), "logs", name)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -161,15 +170,15 @@ func (d *DockerCLI) CreateNetwork(name string, internal bool, labels map[string]
 		args = append(args, "--internal")
 	}
 	args = append(args, name)
-	return exec.CommandContext(d.ctx, "docker", args...).Run()
+	return exec.CommandContext(d.ctx, d.command(), args...).Run()
 }
 
 func (d *DockerCLI) RemoveNetwork(name string) error {
-	return exec.Command("docker", "network", "rm", name).Run()
+	return exec.Command(d.command(), "network", "rm", name).Run()
 }
 
 func (d *DockerCLI) NetworkInternal(name string) (bool, error) {
-	out, err := exec.CommandContext(d.ctx, "docker", "network", "inspect", "--format={{.Internal}}", name).Output()
+	out, err := exec.CommandContext(d.ctx, d.command(), "network", "inspect", "--format={{.Internal}}", name).Output()
 	if err != nil {
 		return false, fmt.Errorf("failed to inspect network %q: %w", name, err)
 	}
@@ -182,11 +191,52 @@ func (d *DockerCLI) CreateVolume(name string, labels map[string]string) error {
 		args = append(args, "--label", k+"="+v)
 	}
 	args = append(args, name)
-	return exec.CommandContext(d.ctx, "docker", args...).Run()
+	return exec.CommandContext(d.ctx, d.command(), args...).Run()
 }
 
 func (d *DockerCLI) RemoveVolume(name string) error {
-	return exec.Command("docker", "volume", "rm", "-f", name).Run()
+	return exec.Command(d.command(), "volume", "rm", "-f", name).Run()
+}
+
+func (d *DockerCLI) command() string {
+	if d.binary != "" {
+		return d.binary
+	}
+	return "docker"
+}
+
+func buildArgs(engine containerEngine, dockerfile, tag, contextDir string) []string {
+	args := []string{"build", "--no-cache", "-f", dockerfile, "-t", tag}
+	if engine == enginePodman {
+		args = append(args, "--load")
+	}
+	args = append(args, contextDir)
+	return args
+}
+
+func detectContainerEngine(ctx context.Context, binary string) containerEngine {
+	cmd := exec.CommandContext(ctx, binary, "version", "--format", "{{.Client.Platform.Name}}")
+	out, err := cmd.Output()
+	if err != nil {
+		return engineDocker
+	}
+	return classifyContainerEngine(string(out))
+}
+
+func classifyContainerEngine(output string) containerEngine {
+	if strings.Contains(strings.ToLower(strings.TrimSpace(output)), "podman") {
+		return enginePodman
+	}
+	return engineDocker
+}
+
+func removeContainerArgs(engine containerEngine, name string) []string {
+	args := []string{"rm", "-f"}
+	if engine == enginePodman {
+		args = append(args, "-t", "0")
+	}
+	args = append(args, name)
+	return args
 }
 
 func runArgs(opts RunOpts) []string {

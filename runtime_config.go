@@ -45,14 +45,7 @@ func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built
 		volumes[i] = expandVolumeSpec(resources.projectDir, v)
 	}
 
-	image := cfg.Sandbox.Image
-	if image == "" {
-		if built {
-			image = defaultSandboxImage(resources.projectDir)
-		} else {
-			image = "bash:latest"
-		}
-	}
+	image := resolvedSandboxImage(resources.projectDir, cfg, built)
 
 	return rt.RunInteractive(RunOpts{
 		Name:     resources.sandboxContainer,
@@ -64,6 +57,16 @@ func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built
 		Image:    image,
 		Cmd:      append([]string{command}, extraArgs...),
 	})
+}
+
+func resolvedSandboxImage(projectDir string, cfg *Config, built bool) string {
+	if cfg.Sandbox.Image != "" {
+		return cfg.Sandbox.Image
+	}
+	if built {
+		return defaultSandboxImage(projectDir)
+	}
+	return "bash:latest"
 }
 
 func sandboxImageName(projectDir string, cfg *Config) string {

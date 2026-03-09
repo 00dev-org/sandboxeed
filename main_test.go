@@ -376,6 +376,44 @@ func TestSandboxImageNameUsesProjectSpecificDefault(t *testing.T) {
 	}
 }
 
+func TestResolvedSandboxImage(t *testing.T) {
+	tests := []struct {
+		name  string
+		cfg   *Config
+		built bool
+		want  string
+	}{
+		{
+			name: "configured image",
+			cfg: func() *Config {
+				cfg := &Config{}
+				cfg.Sandbox.Image = "custom-sandbox:dev"
+				return cfg
+			}(),
+			want: "custom-sandbox:dev",
+		},
+		{
+			name:  "built default image",
+			cfg:   &Config{},
+			built: true,
+			want:  "my-project-sandboxeed",
+		},
+		{
+			name: "fallback image",
+			cfg:  &Config{},
+			want: "bash:latest",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := resolvedSandboxImage("/workspace/My Project", tc.cfg, tc.built); got != tc.want {
+				t.Fatalf("resolvedSandboxImage() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestShouldAutoBuildRequiresExplicitDockerfile(t *testing.T) {
 	cfg := &Config{}
 	if shouldAutoBuild(cfg) {

@@ -114,7 +114,11 @@ func run() int {
 	}
 
 	resources := newRunResources(dir)
-	rt := &DockerCLI{ctx: ctx}
+	rt := &DockerCLI{
+		ctx:    ctx,
+		binary: "docker",
+		engine: detectContainerEngine(ctx, "docker"),
+	}
 
 	var cleanupOnce sync.Once
 	cleanup := func() {
