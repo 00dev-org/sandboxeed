@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -32,12 +33,18 @@ func TestLoadConfigReturnsDefaultsWhenConfigMissing(t *testing.T) {
 func TestLoadConfigLoadsUserConfigWhenPresent(t *testing.T) {
 	withConfigDirs(t, strings.Join([]string{
 		"sandbox:",
+		"  build:",
+		"    dockerfile: ~/.sandboxeed/Dockerfile",
+		"  image: sandboxeed-user:latest",
 		"  volumes:",
 		"    - ~/.gitconfig:/home/node/.gitconfig:ro",
 		"  environment:",
 		"    - FOO=user",
 		"  domains:",
 		"    - user.example.com",
+		"  memory: 256m",
+		"  cpus: \"1.5\"",
+		"  pids: 128",
 		"",
 	}, "\n"), func(projectDir, homeDir string) {
 		cfg, err := loadConfig()
@@ -54,12 +61,21 @@ func TestLoadConfigLoadsUserConfigWhenPresent(t *testing.T) {
 		if got, want := cfg.Sandbox.Domains, []string{"user.example.com"}; !equalStrings(got, want) {
 			t.Fatalf("loadConfig() domains = %v, want %v", got, want)
 		}
+		if cfg.Sandbox.Build.Dockerfile != "~/.sandboxeed/Dockerfile" || cfg.Sandbox.Image != "sandboxeed-user:latest" {
+			t.Fatalf("loadConfig() build/image = (%q, %q), want (%q, %q)", cfg.Sandbox.Build.Dockerfile, cfg.Sandbox.Image, "~/.sandboxeed/Dockerfile", "sandboxeed-user:latest")
+		}
+		if cfg.Sandbox.Memory != "256m" || cfg.Sandbox.CPUs != "1.5" || cfg.Sandbox.Pids != 128 {
+			t.Fatalf("loadConfig() limits = (%q, %q, %d), want (%q, %q, %d)", cfg.Sandbox.Memory, cfg.Sandbox.CPUs, cfg.Sandbox.Pids, "256m", "1.5", 128)
+		}
 	})
 }
 
 func TestLoadConfigMergesUserAndProjectConfig(t *testing.T) {
 	withConfigDirs(t, strings.Join([]string{
 		"sandbox:",
+		"  build:",
+		"    dockerfile: ~/.sandboxeed/Dockerfile",
+		"  image: sandboxeed-user:latest",
 		"  volumes:",
 		"    - ~/.gitconfig:/home/node/.gitconfig:ro",
 		"    - ~/.npmrc:/home/node/.npmrc:ro",
@@ -69,6 +85,9 @@ func TestLoadConfigMergesUserAndProjectConfig(t *testing.T) {
 		"  domains:",
 		"    - user.example.com",
 		"    - shared.example.com",
+		"  memory: 256m",
+		"  cpus: \"1\"",
+		"  pids: 64",
 		"",
 	}, "\n"), func(projectDir, homeDir string) {
 		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
@@ -84,6 +103,9 @@ func TestLoadConfigMergesUserAndProjectConfig(t *testing.T) {
 			"  domains:",
 			"    - shared.example.com",
 			"    - project.example.com",
+			"  memory: 512m",
+			"  cpus: \"2.5\"",
+			"  pids: 256",
 			"",
 		}, "\n"))
 
@@ -94,6 +116,9 @@ func TestLoadConfigMergesUserAndProjectConfig(t *testing.T) {
 
 		if cfg.Sandbox.Image != "alpine:3.22" {
 			t.Fatalf("loadConfig() image = %q, want %q", cfg.Sandbox.Image, "alpine:3.22")
+		}
+		if cfg.Sandbox.Build.Dockerfile != "" {
+			t.Fatalf("loadConfig() dockerfile = %q, want empty when project uses image only", cfg.Sandbox.Build.Dockerfile)
 		}
 		if cfg.Sandbox.WorkingDir != "/app" {
 			t.Fatalf("loadConfig() working dir = %q, want %q", cfg.Sandbox.WorkingDir, "/app")
@@ -119,24 +144,27 @@ func TestLoadConfigMergesUserAndProjectConfig(t *testing.T) {
 		}; !equalStrings(got, want) {
 			t.Fatalf("loadConfig() domains = %v, want %v", got, want)
 		}
+		if cfg.Sandbox.Memory != "512m" || cfg.Sandbox.CPUs != "2.5" || cfg.Sandbox.Pids != 256 {
+			t.Fatalf("loadConfig() limits = (%q, %q, %d), want (%q, %q, %d)", cfg.Sandbox.Memory, cfg.Sandbox.CPUs, cfg.Sandbox.Pids, "512m", "2.5", 256)
+		}
 	})
 }
 
 func TestLoadConfigRejectsUnsupportedUserFields(t *testing.T) {
 	withConfigDirs(t, strings.Join([]string{
 		"sandbox:",
-		"  image: alpine:3.22",
 		"  docker: true",
+		"  working_dir: /app",
 		"",
 	}, "\n"), func(projectDir, homeDir string) {
 		_, err := loadConfig()
 		if err == nil {
 			t.Fatalf("loadConfig() error = nil, want error")
 		}
-		if !strings.Contains(err.Error(), "only supports sandbox.volumes, sandbox.environment, and sandbox.domains") {
+		if !strings.Contains(err.Error(), "only supports sandbox.build.dockerfile, sandbox.image, sandbox.volumes, sandbox.environment, sandbox.domains, sandbox.memory, sandbox.cpus, and sandbox.pids") {
 			t.Fatalf("loadConfig() error = %v, want supported-fields guidance", err)
 		}
-		if !strings.Contains(err.Error(), "unsupported fields: image, docker") {
+		if !strings.Contains(err.Error(), "unsupported fields: docker, working_dir") {
 			t.Fatalf("loadConfig() error = %v, want unsupported field list", err)
 		}
 	})
@@ -194,6 +222,169 @@ func TestLoadConfigDoesNotRequireImageForUserConfigOnly(t *testing.T) {
 		}
 		if got, want := cfg.Sandbox.Environment, []string{"FOO=user"}; !equalStrings(got, want) {
 			t.Fatalf("loadConfig() environment = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestLoadConfigAllowsUserImageAndDockerfileWithoutProjectConfig(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  build:",
+		"    dockerfile: ~/.sandboxeed/Dockerfile",
+		"  image: sandboxeed-user:latest",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatalf("loadConfig() error = %v", err)
+		}
+		if cfg.Sandbox.Image != "sandboxeed-user:latest" || cfg.Sandbox.Build.Dockerfile != "~/.sandboxeed/Dockerfile" {
+			t.Fatalf("loadConfig() build/image = (%q, %q), want user defaults", cfg.Sandbox.Build.Dockerfile, cfg.Sandbox.Image)
+		}
+	})
+}
+
+func TestLoadConfigProjectConfigCanInheritUserImage(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  build:",
+		"    dockerfile: ~/.sandboxeed/Dockerfile",
+		"  image: sandboxeed-user:latest",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  environment:",
+			"    - FOO=project",
+			"",
+		}, "\n"))
+
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatalf("loadConfig() error = %v", err)
+		}
+		if cfg.Sandbox.Image != "sandboxeed-user:latest" || cfg.Sandbox.Build.Dockerfile != "~/.sandboxeed/Dockerfile" {
+			t.Fatalf("loadConfig() build/image = (%q, %q), want inherited user values", cfg.Sandbox.Build.Dockerfile, cfg.Sandbox.Image)
+		}
+		if got, want := cfg.Sandbox.Environment, []string{"FOO=project"}; !equalStrings(got, want) {
+			t.Fatalf("loadConfig() environment = %v, want %v", got, want)
+		}
+	})
+}
+
+func TestLoadConfigRejectsInvalidProjectLimits(t *testing.T) {
+	withConfigDirs(t, "", func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  image: alpine:3.22",
+			"  cpus: nope",
+			"",
+		}, "\n"))
+
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatalf("loadConfig() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "sandbox.cpus") {
+			t.Fatalf("loadConfig() error = %v, want cpu validation", err)
+		}
+	})
+}
+
+func TestLoadConfigRejectsInvalidMemoryLimit(t *testing.T) {
+	withConfigDirs(t, "", func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  image: alpine:3.22",
+			"  memory: abc",
+			"",
+		}, "\n"))
+
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatalf("loadConfig() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "sandbox.memory must be a valid Docker memory value") {
+			t.Fatalf("loadConfig() error = %v, want memory validation", err)
+		}
+	})
+}
+
+func TestLoadConfigRejectsProjectDockerfileWithoutImage(t *testing.T) {
+	withConfigDirs(t, "", func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  build:",
+			"    dockerfile: Dockerfile.sandbox",
+			"",
+		}, "\n"))
+
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatalf("loadConfig() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "sandbox.image is required when sandbox.build.dockerfile is set") {
+			t.Fatalf("loadConfig() error = %v, want build/image pair validation", err)
+		}
+	})
+}
+
+func TestLoadConfigRejectsUserDockerfileWithoutImage(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  build:",
+		"    dockerfile: ~/.sandboxeed/Dockerfile",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatalf("loadConfig() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "sandbox.image is required when sandbox.build.dockerfile is set") {
+			t.Fatalf("loadConfig() error = %v, want build/image pair validation", err)
+		}
+	})
+}
+
+func TestLoadConfigRejectsInvalidUserLimits(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  cpus: nope",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		_, err := loadConfig()
+		if err == nil {
+			t.Fatalf("loadConfig() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "sandbox.cpus must be a positive number") {
+			t.Fatalf("loadConfig() error = %v, want cpu validation", err)
+		}
+	})
+}
+
+func TestLoadConfigProjectEmptyLimitsDoNotOverrideUserDefaults(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  memory: 256m",
+		"  cpus: \"1.5\"",
+		"  pids: 128",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  image: alpine:3.22",
+			"  memory: \"\"",
+			"  cpus: \"\"",
+			"  pids: 0",
+			"",
+		}, "\n"))
+
+		cfg, err := loadConfig()
+		if err != nil {
+			t.Fatalf("loadConfig() error = %v", err)
+		}
+		if cfg.Sandbox.Memory != "256m" || cfg.Sandbox.CPUs != "1.5" || cfg.Sandbox.Pids != 128 {
+			t.Fatalf("loadConfig() limits = (%q, %q, %d), want inherited user defaults", cfg.Sandbox.Memory, cfg.Sandbox.CPUs, cfg.Sandbox.Pids)
 		}
 	})
 }
@@ -454,6 +645,78 @@ func TestShouldAutoBuildRequiresExplicitDockerfile(t *testing.T) {
 	}
 }
 
+func TestResolveSandboxConfigIncludesLimits(t *testing.T) {
+	cfg := &Config{}
+	cfg.Sandbox.Image = "alpine:3.22"
+	cfg.Sandbox.Memory = "512m"
+	cfg.Sandbox.CPUs = "1.5"
+	cfg.Sandbox.Pids = 128
+	cfg.Sandbox.Environment = []string{"APP_ENV=test"}
+
+	resolved := resolveSandboxConfig(newRunResources("/workspace/demo"), cfg, false, false, "", "")
+	if resolved.Memory != "512m" || resolved.CPUs != "1.5" || resolved.Pids != 128 {
+		t.Fatalf("resolveSandboxConfig() limits = (%q, %q, %d), want (%q, %q, %d)", resolved.Memory, resolved.CPUs, resolved.Pids, "512m", "1.5", 128)
+	}
+}
+
+func TestRunInspectPrintsResolvedConfig(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  memory: 256m",
+		"  cpus: \"1\"",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  image: alpine:3.22",
+			"",
+		}, "\n"))
+
+		stdout, stderr := captureOutput(t, func() {
+			if code := runInspect(false, false); code != 0 {
+				t.Fatalf("runInspect() = %d, want 0", code)
+			}
+		})
+		if stderr != "" {
+			t.Fatalf("runInspect() stderr = %q, want empty", stderr)
+		}
+		for _, part := range []string{
+			"image: alpine:3.22",
+			"memory: 256m",
+			"cpus: \"1\"",
+		} {
+			if !strings.Contains(stdout, part) {
+				t.Fatalf("runInspect() output missing %q:\n%s", part, stdout)
+			}
+		}
+	})
+}
+
+func TestResolveDockerfilePathExpandsHome(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	got, err := resolveDockerfilePath("/workspace/demo", "~/Dockerfile")
+	if err != nil {
+		t.Fatalf("resolveDockerfilePath() error = %v", err)
+	}
+	if got != filepath.Join(homeDir, "Dockerfile") {
+		t.Fatalf("resolveDockerfilePath() = %q, want %q", got, filepath.Join(homeDir, "Dockerfile"))
+	}
+}
+
+func TestResolveDockerfilePathFailsWithoutHome(t *testing.T) {
+	t.Setenv("HOME", "")
+
+	_, err := resolveDockerfilePath("/workspace/demo", "~/Dockerfile")
+	if err == nil {
+		t.Fatalf("resolveDockerfilePath() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "cannot expand") {
+		t.Fatalf("resolveDockerfilePath() error = %v, want expansion error", err)
+	}
+}
+
 func withWorkingDir(t *testing.T, dir string, fn func()) {
 	t.Helper()
 
@@ -506,4 +769,39 @@ func equalStrings(got, want []string) bool {
 		}
 	}
 	return true
+}
+
+func captureOutput(t *testing.T, fn func()) (string, string) {
+	t.Helper()
+
+	origStdout := os.Stdout
+	origStderr := os.Stderr
+	stdoutReader, stdoutWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe(stdout) error = %v", err)
+	}
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe(stderr) error = %v", err)
+	}
+	os.Stdout = stdoutWriter
+	os.Stderr = stderrWriter
+	t.Cleanup(func() {
+		os.Stdout = origStdout
+		os.Stderr = origStderr
+	})
+
+	fn()
+
+	_ = stdoutWriter.Close()
+	_ = stderrWriter.Close()
+	stdoutBytes, err := io.ReadAll(stdoutReader)
+	if err != nil {
+		t.Fatalf("ReadAll(stdout) error = %v", err)
+	}
+	stderrBytes, err := io.ReadAll(stderrReader)
+	if err != nil {
+		t.Fatalf("ReadAll(stderr) error = %v", err)
+	}
+	return string(stdoutBytes), string(stderrBytes)
 }

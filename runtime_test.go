@@ -82,6 +82,9 @@ func TestRunArgsIncludesConfiguredOptions(t *testing.T) {
 		Image:      "alpine:3.22",
 		Cmd:        []string{"sh", "-lc", "echo ok"},
 		Privileged: true,
+		Memory:     "512m",
+		CPUs:       "1.5",
+		PidsLimit:  256,
 	}
 
 	got := runArgs(opts)
@@ -96,6 +99,9 @@ func TestRunArgsIncludesConfiguredOptions(t *testing.T) {
 		"-e", "HTTP_PROXY=http://proxy:3128",
 		"-e", "NO_PROXY=localhost",
 		"--label", "sandboxeed.managed=true",
+		"--memory", "512m",
+		"--cpus", "1.5",
+		"--pids-limit", "256",
 		"-w", "/workspace",
 		"alpine:3.22",
 		"sh", "-lc", "echo ok",

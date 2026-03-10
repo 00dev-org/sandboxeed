@@ -27,7 +27,7 @@ Codex CLI examples:
 - `config.toml` is a minimal permissive Codex configuration example.
 
 > **Note:** `config.toml` sets `shell_environment_policy.include_only`, which is a strict
-> allowlist — Codex strips every environment variable not listed there before running shell
+> allowlist - Codex strips every environment variable not listed there before running shell
 > commands. If a variable isn't in `include_only`, it won't be visible to anything Codex runs,
 > regardless of how it was set. Make sure any environment variable you rely on (API keys, custom
 > vars set via `sandboxeed.yaml`, etc.) is listed there.

@@ -35,6 +35,9 @@ type RunOpts struct {
 	Cmd        []string
 	Privileged bool
 	User       string // passed as --user (e.g. "1000:1000")
+	Memory     string
+	CPUs       string
+	PidsLimit  int
 }
 
 // ContainerRuntime abstracts container engine operations.
@@ -275,6 +278,15 @@ func runArgs(opts RunOpts) []string {
 	}
 	if opts.User != "" {
 		args = append(args, "--user", opts.User)
+	}
+	if opts.Memory != "" {
+		args = append(args, "--memory", opts.Memory)
+	}
+	if opts.CPUs != "" {
+		args = append(args, "--cpus", opts.CPUs)
+	}
+	if opts.PidsLimit > 0 {
+		args = append(args, "--pids-limit", fmt.Sprintf("%d", opts.PidsLimit))
 	}
 	if opts.WorkDir != "" {
 		args = append(args, "-w", opts.WorkDir)

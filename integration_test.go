@@ -199,6 +199,45 @@ func TestIntegrationAutoBuild(t *testing.T) {
 	}
 }
 
+func TestIntegrationBuildUsesUserImageWithoutProjectConfig(t *testing.T) {
+	ensureDockerImage(t, "busybox:1.36")
+	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
+
+	projectDir := workspaceTempDir(t)
+	bin := buildSandboxeedBinary(t)
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	image := "sandboxeed-user-build-test"
+	if err := os.MkdirAll(filepath.Join(homeDir, ".sandboxeed"), 0o755); err != nil {
+		t.Fatalf("MkdirAll(.sandboxeed) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(homeDir, userConfigFile), []byte(strings.Join([]string{
+		"sandbox:",
+		"  build:",
+		"    dockerfile: ~/.sandboxeed/Dockerfile",
+		"  image: sandboxeed-user-build-test",
+		"",
+	}, "\n")), 0o600); err != nil {
+		t.Fatalf("WriteFile(user config) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(homeDir, ".sandboxeed", "Dockerfile"), []byte("FROM busybox:1.36\nRUN touch /user-marker\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(user Dockerfile) error = %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = exec.Command("docker", "rmi", "-f", image).Run()
+	})
+
+	stdout, stderr, err := runSandboxeedBinaryScripted(bin, projectDir, fmt.Sprintf("--build sh -lc %q", "test -f /user-marker && echo USERBUILD_OK"))
+	if err != nil {
+		t.Fatalf("sandboxeed --build failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)
+	}
+	if !strings.Contains(stdout, "USERBUILD_OK") {
+		t.Fatalf("sandbox output missing build marker:\n%s", stdout)
+	}
+}
+
 func TestIntegrationVolumeMounts(t *testing.T) {
 	session := startSandboxSession(t, "sandbox:\n  image: busybox:1.36\n  volumes:\n    - /etc/hostname:/mounted-hostname:ro\n")
 
@@ -210,6 +249,36 @@ func TestIntegrationVolumeMounts(t *testing.T) {
 	hostname := strings.TrimSpace(out)
 	if hostname == "" {
 		t.Fatalf("mounted hostname file is empty")
+	}
+}
+
+func TestIntegrationInspectReportsMergedConfig(t *testing.T) {
+	projectDir := workspaceTempDir(t)
+	bin := buildSandboxeedBinary(t)
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+	if err := os.WriteFile(filepath.Join(homeDir, userConfigFile), []byte("sandbox:\n  memory: 256m\n  cpus: \"1\"\n"), 0o600); err != nil {
+		t.Fatalf("WriteFile(user config) error = %v", err)
+	}
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n  pids: 64\n")
+
+	cmd := exec.Command(bin, "inspect")
+	cmd.Dir = projectDir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("sandboxeed inspect failed: %v\noutput:\n%s", err, string(out))
+	}
+
+	output := string(out)
+	for _, part := range []string{
+		"image: busybox:1.36",
+		"memory: 256m",
+		"cpus: \"1\"",
+		"pids: 64",
+	} {
+		if !strings.Contains(output, part) {
+			t.Fatalf("inspect output missing %q:\n%s", part, output)
+		}
 	}
 }
 
@@ -362,6 +431,10 @@ func runSandboxeedScripted(t *testing.T, projectDir, command string) (string, st
 	t.Helper()
 
 	bin := buildSandboxeedBinary(t)
+	return runSandboxeedBinaryScripted(bin, projectDir, command)
+}
+
+func runSandboxeedBinaryScripted(bin, projectDir, command string) (string, string, error) {
 	cmd := exec.Command("script", "-qec", fmt.Sprintf("%q %s", bin, command), "/dev/null")
 	cmd.Dir = projectDir
 

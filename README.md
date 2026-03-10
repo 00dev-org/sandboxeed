@@ -51,7 +51,7 @@ It addresses common issues across popular agent tools:
                                                    +-----------------+
 ```
 
-The sandbox container has **no direct internet access** — all outbound traffic is
+The sandbox container has **no direct internet access** - all outbound traffic is
 forced through the Squid proxy, which only forwards connections to your configured
 `domains`. Two Docker networks are created per run: an internal-only network shared
 by the sandbox, proxy, and optional DinD sidecar, and an egress network that gives
@@ -135,9 +135,10 @@ sandboxeed cleanup
 
 ### Built-in commands
 
-- `help` — show the usage summary (`--help` and `-h` also work)
-- `version` — print the app version
-- `cleanup` — list sandboxeed-managed containers, networks, and volumes and remove them after
+- `help` - show the usage summary (`--help` and `-h` also work)
+- `version` - print the app version
+- `inspect` - print the effective merged sandbox config without starting containers
+- `cleanup` - list sandboxeed-managed containers, networks, and volumes and remove them after
   confirmation; images are not removed
 
 Without a built-in command, everything after `sandboxeed` is run inside the sandbox. If no command
@@ -157,7 +158,7 @@ When you run `sandboxeed`:
    fetched from the GitHub API and injected into the sandbox at `/etc/ssh/` alongside an SSH config
    that routes `github.com` through the proxy via `corkscrew`.
 2. A Squid proxy container starts with an allowlist of the domains you configured.
-3. The sandbox container starts connected to an internal Docker network — all outbound traffic goes
+3. The sandbox container starts connected to an internal Docker network - all outbound traffic goes
    through the proxy, and everything not on your domain list is blocked.
 4. When the sandbox exits, sandboxeed removes the proxy, sandbox, any DinD sidecar, and all
    per-run networks and volumes.
@@ -176,6 +177,10 @@ Configuration is loaded in this order:
 Later layers override earlier ones. Environment variables are merged by variable name, volume mounts
 are merged by container destination path, and domains are deduplicated.
 
+For reusable user-managed sandbox images, `sandbox.image` and `sandbox.build.dockerfile` can live in
+`~/.sandboxeed.yaml`. A project config can either inherit that pair unchanged, override both with its own
+build settings, or override just `image` to use a different prebuilt image.
+
 The current directory is always mounted at `/workspace` inside the sandbox. Any volumes you
 configure are merged on top of that default.
 
@@ -192,6 +197,9 @@ sandbox:
     - MY_VAR=value
   working_dir: /workspace            # default: /workspace
   docker: true                       # enable Docker-in-Docker support
+  memory: 2g                         # sandbox container memory limit
+  cpus: "2"                          # sandbox container CPU limit
+  pids: 512                          # sandbox container PID limit
   domains: # whitelisted outbound domains
     - github.com
     - api.example.com
@@ -208,17 +216,28 @@ sandbox:
 | `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`). When the same variable appears more than once, the last config layer wins.                 |
 | `working_dir`      | Working directory inside the container. Default: `/workspace`.                                                                                                                                   |
 | `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see [Docker-in-Docker](#docker-in-docker)).                                                                                                   |
+| `memory`           | Memory limit for the sandbox container, passed through to Docker as `--memory`. Supported in both project and user config.                                                                        |
+| `cpus`             | CPU limit for the sandbox container, passed through to Docker as `--cpus`. Supported in both project and user config.                                                                             |
+| `pids`             | PID limit for the sandbox container, passed through to Docker as `--pids-limit`. Supported in both project and user config.                                                                       |
 | `domains`          | Domains the sandbox is allowed to reach. All other outbound traffic is blocked. User and project domains are combined and deduplicated.                                                          |
 
 ### User config
 
 Keep personal defaults in `~/.sandboxeed.yaml`. Only these fields are supported there:
 
+- `sandbox.build.dockerfile`
+- `sandbox.image`
 - `sandbox.volumes`
 - `sandbox.environment`
 - `sandbox.domains`
+- `sandbox.memory`
+- `sandbox.cpus`
+- `sandbox.pids`
 
-Fields such as `image`, `build`, `working_dir`, and `docker` belong in the project config.
+`sandbox.build.dockerfile` in either user or project config requires `sandbox.image` in the same config layer so
+builds always target a predictable image name.
+
+Fields such as `working_dir` and `docker` belong in the project config.
 sandboxeed will report an error if they appear in the user config.
 
 Use it to avoid committing user-dependent changes to the project repository and to avoid repetition across multiple
@@ -231,6 +250,9 @@ User config:
 ```yaml
 # ~/.sandboxeed.yaml
 sandbox:
+  build:
+    dockerfile: ~/.sandboxeed/Dockerfile
+  image: localhost/sandboxeed:latest
   volumes:
     - ~/.claude:/home/node/.claude
     - ~/.claude.json:/home/node/.claude.json
@@ -240,6 +262,9 @@ sandbox:
     - ~/.gitconfig:/home/node/.gitconfig:ro
   environment:
     - DISABLE_AUTOUPDATER=1
+  memory: 2g
+  cpus: "2"
+  pids: 512
   domains:
     - .anthropic.com
     - .claude.ai
@@ -299,7 +324,7 @@ If no `sandboxeed.yaml` is found, sandboxeed runs a `bash:latest` container with
 
 ## Dockerfile requirements
 
-sandboxeed injects several things into the sandbox at runtime — your Dockerfile does not need to
+sandboxeed injects several things into the sandbox at runtime - your Dockerfile does not need to
 set these up:
 
 | What              | Where                                   | Notes                                                                                                                                                     |
@@ -312,9 +337,9 @@ set these up:
 
 **What your Dockerfile must provide:**
 
-- **`corkscrew`** — required when `github.com` or `.github.com` is in `domains`. Used to tunnel
+- **`corkscrew`** - required when `github.com` or `.github.com` is in `domains`. Used to tunnel
   SSH through the HTTP proxy; without it, `git clone` via SSH will fail.
-- **`docker` CLI** — required when `docker: true` is set. The DinD sidecar provides the daemon but
+- **`docker` CLI** - required when `docker: true` is set. The DinD sidecar provides the daemon but
   the client must be present in the image.
 
 **Recommended patterns:**
@@ -334,7 +359,7 @@ the internal network. The sandbox container is configured to use it automaticall
 
 This lets you run `docker` commands inside the sandbox (for example, `docker build` and
 `docker run`) without granting the sandbox container privileged access. The DinD container itself
-runs privileged, but is isolated on the internal network — its outbound traffic goes through the
+runs privileged, but is isolated on the internal network - its outbound traffic goes through the
 Squid proxy like everything else.
 
 Starting the DinD sidecar typically adds about 10 seconds to sandbox startup time. To skip that
@@ -354,9 +379,9 @@ all outbound traffic.
 
 Two Docker networks are created per run:
 
-- `<project>-internal-<run-id>` — connects the sandbox, proxy, and optional DinD sidecar (internal,
+- `<project>-internal-<run-id>` - connects the sandbox, proxy, and optional DinD sidecar (internal,
   no external routing)
-- `<project>-egress-<run-id>` — connects the proxy to the outside world
+- `<project>-egress-<run-id>` - connects the proxy to the outside world
 
 When Docker-in-Docker is enabled, sandboxeed also creates a per-run labeled volume for
 `/var/lib/docker` inside the DinD sidecar so it can be cleaned up reliably.

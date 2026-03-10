@@ -8,8 +8,11 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"syscall"
+
+	"gopkg.in/yaml.v3"
 )
 
 var version string
@@ -45,11 +48,13 @@ Usage:
   sandboxeed [--build] [--no-docker] [--read-only] [command] [args...]
   sandboxeed version
   sandboxeed help
+  sandboxeed inspect
   sandboxeed cleanup
 
 Commands:
   help      Show this help text.
   version   Print the app version.
+  inspect   Print the effective sandbox configuration.
   cleanup   List and remove sandboxeed containers, networks, and volumes (with confirmation).
 
 Flags:
@@ -98,6 +103,9 @@ func run() int {
 	if command == "cleanup" {
 		return runCleanup()
 	}
+	if command == "inspect" {
+		return runInspect(noDocker, readOnly)
+	}
 
 	cfg, err := loadConfig()
 	if err != nil {
@@ -142,6 +150,11 @@ func run() int {
 		if dockerfile == "" {
 			dockerfile = "Dockerfile"
 		}
+		dockerfile, err = resolveDockerfilePath(dir, dockerfile)
+		if err != nil {
+			stderrf("failed to resolve dockerfile path: %v\n", err)
+			return 1
+		}
 		if err := rt.Build(dockerfile, sandboxImageName(dir, cfg), "."); err != nil {
 			if ctx.Err() != nil {
 				return 0
@@ -160,7 +173,12 @@ func run() int {
 			return 1
 		}
 		if !exists {
-			if err := rt.Build(cfg.Sandbox.Build.Dockerfile, image, "."); err != nil {
+			dockerfile, err := resolveDockerfilePath(dir, cfg.Sandbox.Build.Dockerfile)
+			if err != nil {
+				stderrf("failed to resolve dockerfile path: %v\n", err)
+				return 1
+			}
+			if err := rt.Build(dockerfile, image, "."); err != nil {
 				if ctx.Err() != nil {
 					return 0
 				}
@@ -213,7 +231,6 @@ func run() int {
 			return 1
 		}
 	}
-
 	sandboxErr := runSandbox(rt, resources, cfg, build, readOnly, sshConfigPath, sshKnownHostsPath, command, args)
 	if ctx.Err() != nil {
 		return 0
@@ -229,4 +246,49 @@ func run() int {
 		return 1
 	}
 	return 0
+}
+
+func runInspect(noDocker, readOnly bool) int {
+	cfg, err := loadConfig()
+	if err != nil {
+		stderrf("failed to load config: %v\n", err)
+		return 1
+	}
+	if noDocker {
+		cfg.Sandbox.Docker = false
+	}
+
+	dir, err := os.Getwd()
+	if err != nil {
+		stderrf("failed to determine working directory: %v\n", err)
+		return 1
+	}
+
+	resolved := resolveSandboxConfig(newRunResources(dir), cfg, false, readOnly, "", "")
+	data, err := yaml.Marshal(struct {
+		Sandbox ResolvedSandboxConfig `yaml:"sandbox"`
+	}{Sandbox: resolved})
+	if err != nil {
+		stderrf("failed to render config: %v\n", err)
+		return 1
+	}
+	stdoutf("%s", data)
+	return 0
+}
+
+func resolveDockerfilePath(projectDir, dockerfile string) (string, error) {
+	switch {
+	case dockerfile == "":
+		return dockerfile, nil
+	case strings.HasPrefix(dockerfile, "~/"):
+		homeDir, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("cannot expand %q without a home directory: %w", dockerfile, err)
+		}
+		return filepath.Join(homeDir, dockerfile[2:]), nil
+	case filepath.IsAbs(dockerfile):
+		return dockerfile, nil
+	default:
+		return filepath.Join(projectDir, dockerfile), nil
+	}
 }

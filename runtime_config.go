@@ -20,7 +20,20 @@ var defaultDockerEnvironment = []string{
 
 const defaultWorkingDir = "/workspace"
 
-func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built, readOnly bool, sshConfigPath, sshKnownHostsPath, command string, extraArgs []string) error {
+type ResolvedSandboxConfig struct {
+	Image       string   `yaml:"image"`
+	Volumes     []string `yaml:"volumes"`
+	Environment []string `yaml:"environment"`
+	WorkingDir  string   `yaml:"working_dir"`
+	Docker      bool     `yaml:"docker"`
+	Domains     []string `yaml:"domains,omitempty"`
+	Memory      string   `yaml:"memory,omitempty"`
+	CPUs        string   `yaml:"cpus,omitempty"`
+	Pids        int      `yaml:"pids,omitempty"`
+	User        string   `yaml:"user,omitempty"`
+}
+
+func resolveSandboxConfig(resources *runResources, cfg *Config, built, readOnly bool, sshConfigPath, sshKnownHostsPath string) ResolvedSandboxConfig {
 	volumes := make([]string, 0, 2+len(defaultVolumes)+len(cfg.Sandbox.Volumes))
 	if sshConfigPath != "" {
 		volumes = append(volumes, sshConfigPath+":/etc/ssh/ssh_config:ro")
@@ -54,26 +67,44 @@ func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built
 		}
 	}
 
-	image := resolvedSandboxImage(resources.projectDir, cfg, built)
+	memory := strings.TrimSpace(cfg.Sandbox.Memory)
+	cpus := strings.TrimSpace(cfg.Sandbox.CPUs)
 
-	// When no config file is present (bash:latest fallback), run as the
-	// current host user so files created inside /workspace are not owned by
-	// root on the host.
 	var user string
 	if cfg.Sandbox.Image == "" && !built {
 		user = fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid())
 	}
 
+	return ResolvedSandboxConfig{
+		Image:       resolvedSandboxImage(resources.projectDir, cfg, built),
+		Volumes:     volumes,
+		Environment: environment,
+		WorkingDir:  workingDir,
+		Docker:      cfg.Sandbox.Docker,
+		Domains:     append([]string(nil), cfg.Sandbox.Domains...),
+		Memory:      memory,
+		CPUs:        cpus,
+		Pids:        cfg.Sandbox.Pids,
+		User:        user,
+	}
+}
+
+func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built, readOnly bool, sshConfigPath, sshKnownHostsPath, command string, extraArgs []string) error {
+	resolved := resolveSandboxConfig(resources, cfg, built, readOnly, sshConfigPath, sshKnownHostsPath)
+
 	return rt.RunInteractive(RunOpts{
-		Name:     resources.sandboxContainer,
-		Networks: []NetworkAttachment{{Name: resources.internalNetwork}},
-		Volumes:  volumes,
-		Env:      environment,
-		Labels:   managedLabels(resources.projectName, "sandbox"),
-		WorkDir:  workingDir,
-		Image:    image,
-		Cmd:      append([]string{command}, extraArgs...),
-		User:     user,
+		Name:      resources.sandboxContainer,
+		Networks:  []NetworkAttachment{{Name: resources.internalNetwork}},
+		Volumes:   resolved.Volumes,
+		Env:       resolved.Environment,
+		Labels:    managedLabels(resources.projectName, "sandbox"),
+		WorkDir:   resolved.WorkingDir,
+		Image:     resolved.Image,
+		Cmd:       append([]string{command}, extraArgs...),
+		User:      resolved.User,
+		Memory:    resolved.Memory,
+		CPUs:      resolved.CPUs,
+		PidsLimit: resolved.Pids,
 	})
 }
 
