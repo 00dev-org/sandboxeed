@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -273,8 +274,13 @@ func runArgs(opts RunOpts) []string {
 	for _, e := range opts.Env {
 		args = append(args, "-e", e)
 	}
-	for k, v := range opts.Labels {
-		args = append(args, "--label", k+"="+v)
+	labelKeys := make([]string, 0, len(opts.Labels))
+	for k := range opts.Labels {
+		labelKeys = append(labelKeys, k)
+	}
+	sort.Strings(labelKeys)
+	for _, k := range labelKeys {
+		args = append(args, "--label", k+"="+opts.Labels[k])
 	}
 	if opts.User != "" {
 		args = append(args, "--user", opts.User)

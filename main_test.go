@@ -495,7 +495,7 @@ func TestNetworkProjectNameSanitizesProjectBasename(t *testing.T) {
 	}
 }
 
-func TestNewRunTokenProducesCompactHexString(t *testing.T) {
+func TestNewRunTokenProducesCompactBase32String(t *testing.T) {
 	got := newRunToken()
 
 	if !regexp.MustCompile(`^[a-z2-7]{8}$`).MatchString(got) {
@@ -528,6 +528,8 @@ func TestNewRunResourcesUsesShortNames(t *testing.T) {
 
 func TestExpandVolumeSpec(t *testing.T) {
 	projectDir := "/workspace/demo"
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
 
 	cases := []struct {
 		name string
@@ -539,6 +541,7 @@ func TestExpandVolumeSpec(t *testing.T) {
 		{name: "parent bind", in: "../shared:/shared", want: "/workspace/shared:/shared"},
 		{name: "absolute bind", in: "/tmp/data:/data:ro", want: "/tmp/data:/data:ro"},
 		{name: "named volume", in: "cache-data:/cache", want: "cache-data:/cache"},
+		{name: "home tilde bind", in: "~/.gitconfig:/home/node/.gitconfig:ro", want: homeDir + "/.gitconfig:/home/node/.gitconfig:ro"},
 	}
 
 	for _, tc := range cases {
