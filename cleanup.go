@@ -101,7 +101,7 @@ func runCleanup() int {
 }
 
 func dockerLines(args ...string) ([]string, error) {
-	cmd := exec.Command("docker", args...)
+	cmd := exec.Command(containerBinary(), args...)
 	out, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func dockerLines(args ...string) ([]string, error) {
 }
 
 func runDockerPassthrough(args ...string) ([]byte, error) {
-	cmd := exec.Command("docker", args...)
+	cmd := exec.Command(containerBinary(), args...)
 	return cmd.CombinedOutput()
 }
 
@@ -148,7 +148,7 @@ func removeDockerObject(kind, name string) error {
 	var args []string
 	switch kind {
 	case "container":
-		args = []string{"rm", "-f", name}
+		args = removeContainerArgs(containerEngineType(), name)
 	case "network":
 		args = []string{"network", "rm", name}
 	case "volume":
@@ -178,7 +178,7 @@ func removeDockerObject(kind, name string) error {
 }
 
 func dockerObjectExists(kind, name string) (bool, error) {
-	cmd := exec.Command("docker", kind, "inspect", name)
+	cmd := exec.Command(containerBinary(), kind, "inspect", name)
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() != 0 {
 			return false, nil

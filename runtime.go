@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -62,7 +63,7 @@ type DockerCLI struct {
 }
 
 func (d *DockerCLI) Build(dockerfile, tag, contextDir string) error {
-	cmd := exec.CommandContext(d.ctx, d.command(), buildArgs(d.engine, dockerfile, tag, contextDir)...)
+	cmd := exec.CommandContext(d.ctx, d.command(), buildArgs(dockerfile, tag, contextDir)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -206,23 +207,32 @@ func (d *DockerCLI) command() string {
 	return "docker"
 }
 
-func buildArgs(engine containerEngine, dockerfile, tag, contextDir string) []string {
-	args := []string{"build", "--no-cache", "-f", dockerfile, "-t", tag}
-	if engine == enginePodman {
-		args = append(args, "--load")
-	}
-	args = append(args, contextDir)
-	return args
+func buildArgs(dockerfile, tag, contextDir string) []string {
+	return []string{"build", "--no-cache", "-f", dockerfile, "-t", tag, contextDir}
 }
 
-func detectContainerEngine(ctx context.Context, binary string) containerEngine {
-	cmd := exec.CommandContext(ctx, binary, "version", "--format", "{{.Client.Platform.Name}}")
-	out, err := cmd.Output()
+func detectContainerEngine(binary string) containerEngine {
+	cmd := exec.Command(binary, "version")
+	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return engineDocker
 	}
 	return classifyContainerEngine(string(out))
 }
+
+var containerBinary = sync.OnceValue(func() string {
+	if _, err := exec.LookPath("docker"); err == nil {
+		return "docker"
+	}
+	if _, err := exec.LookPath("podman"); err == nil {
+		return "podman"
+	}
+	return "docker"
+})
+
+var containerEngineType = sync.OnceValue(func() containerEngine {
+	return detectContainerEngine(containerBinary())
+})
 
 func classifyContainerEngine(output string) containerEngine {
 	if strings.Contains(strings.ToLower(strings.TrimSpace(output)), "podman") {

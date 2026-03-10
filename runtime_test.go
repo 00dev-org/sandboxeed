@@ -2,23 +2,9 @@ package main
 
 import "testing"
 
-func TestBuildArgsUsesDockerDefaults(t *testing.T) {
-	got := buildArgs(engineDocker, "Dockerfile.sandbox", "example:latest", ".")
+func TestBuildArgs(t *testing.T) {
+	got := buildArgs("Dockerfile.sandbox", "example:latest", ".")
 	want := []string{"build", "--no-cache", "-f", "Dockerfile.sandbox", "-t", "example:latest", "."}
-
-	if len(got) != len(want) {
-		t.Fatalf("buildArgs() len = %d, want %d\nargs = %v", len(got), len(want), got)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("buildArgs()[%d] = %q, want %q\nargs = %v", i, got[i], want[i], got)
-		}
-	}
-}
-
-func TestBuildArgsAddsLoadForPodman(t *testing.T) {
-	got := buildArgs(enginePodman, "Dockerfile.sandbox", "example:latest", ".")
-	want := []string{"build", "--no-cache", "-f", "Dockerfile.sandbox", "-t", "example:latest", "--load", "."}
 
 	if len(got) != len(want) {
 		t.Fatalf("buildArgs() len = %d, want %d\nargs = %v", len(got), len(want), got)
@@ -39,6 +25,8 @@ func TestClassifyContainerEngine(t *testing.T) {
 		{name: "docker default", output: "Docker Engine - Community", want: engineDocker},
 		{name: "podman", output: "podman", want: enginePodman},
 		{name: "podman descriptive", output: "Podman Engine", want: enginePodman},
+		{name: "podman server output", output: "Client: Podman Engine\nVersion: 5.0.0\nServer: Podman Engine\nVersion: 5.0.0", want: enginePodman},
+		{name: "docker with podman server", output: "Client:\n Version: 24.0.0\nServer:\n Engine: Podman\n Version: 5.0.0", want: enginePodman},
 	}
 
 	for _, tc := range tests {
