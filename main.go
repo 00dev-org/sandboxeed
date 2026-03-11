@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -46,22 +48,83 @@ func printHelp() {
 
 Usage:
   sandboxeed [--build] [--no-docker] [--read-only] [command] [args...]
-  sandboxeed version
-  sandboxeed help
-  sandboxeed inspect
-  sandboxeed cleanup
-
-Commands:
-  help      Show this help text.
-  version   Print the app version.
-  inspect   Print the effective sandbox configuration.
-  cleanup   List and remove sandboxeed containers, networks, and volumes (with confirmation).
+  sandboxeed --help
+  sandboxeed --version
+  sandboxeed --inspect
+  sandboxeed --cleanup
 
 Flags:
   --build       Build the sandbox image; if a command is provided, run it afterward.
   --no-docker   Skip Docker-in-Docker even if docker: true is set in the config.
   --read-only   Mount all volumes as read-only inside the sandbox.
+  --help        Show this help text.
+  --version     Print the app version.
+  --inspect     Print the effective sandbox configuration.
+  --cleanup     List and remove sandboxeed containers, networks, and volumes (with confirmation).
 `)
+}
+
+type cliMode string
+
+const (
+	cliModeSandbox cliMode = "sandbox"
+	cliModeHelp    cliMode = "help"
+	cliModeVersion cliMode = "version"
+	cliModeInspect cliMode = "inspect"
+	cliModeCleanup cliMode = "cleanup"
+)
+
+type cliOptions struct {
+	mode      cliMode
+	build     bool
+	noDocker  bool
+	readOnly  bool
+	command   string
+	args      []string
+	extraArgs []string
+}
+
+func parseCLIArgs(argv []string) (cliOptions, error) {
+	opts := cliOptions{mode: cliModeSandbox}
+	fs := flag.NewFlagSet("sandboxeed", flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	fs.BoolVar(&opts.build, "build", false, "")
+	fs.BoolVar(&opts.noDocker, "no-docker", false, "")
+	fs.BoolVar(&opts.readOnly, "read-only", false, "")
+
+	help := fs.Bool("help", false, "")
+	fs.BoolVar(help, "h", false, "")
+	version := fs.Bool("version", false, "")
+	inspect := fs.Bool("inspect", false, "")
+	cleanup := fs.Bool("cleanup", false, "")
+
+	if err := fs.Parse(argv); err != nil {
+		return cliOptions{}, err
+	}
+
+	switch {
+	case *help:
+		opts.mode = cliModeHelp
+	case *version:
+		opts.mode = cliModeVersion
+	case *inspect:
+		opts.mode = cliModeInspect
+	case *cleanup:
+		opts.mode = cliModeCleanup
+	}
+
+	rest := fs.Args()
+	if opts.mode != cliModeSandbox {
+		opts.extraArgs = append(opts.extraArgs, rest...)
+		return opts, nil
+	}
+	if len(rest) == 0 {
+		return opts, nil
+	}
+
+	opts.command = rest[0]
+	opts.args = append(opts.args, rest[1:]...)
+	return opts, nil
 }
 
 func main() {
@@ -69,42 +132,30 @@ func main() {
 }
 
 func run() int {
-	build := false
-	noDocker := false
-	readOnly := false
-	command := ""
-	var args []string
-
-	for i := 1; i < len(os.Args); i++ {
-		switch os.Args[i] {
-		case "--build":
-			build = true
-		case "--no-docker":
-			noDocker = true
-		case "--read-only":
-			readOnly = true
-		default:
-			if command == "" {
-				command = os.Args[i]
-			} else {
-				args = append(args, os.Args[i])
-			}
-		}
+	opts, err := parseCLIArgs(os.Args[1:])
+	if err != nil {
+		stderrf("%v\n", err)
+		return 1
 	}
 
-	if command == "version" {
+	if len(opts.extraArgs) > 0 {
+		stderrf("%s does not accept arguments: %s\n", opts.mode, strings.Join(opts.extraArgs, " "))
+		return 1
+	}
+
+	if opts.mode == cliModeVersion {
 		fmt.Println(currentVersion())
 		return 0
 	}
-	if command == "help" || command == "--help" || command == "-h" {
+	if opts.mode == cliModeHelp {
 		printHelp()
 		return 0
 	}
-	if command == "cleanup" {
+	if opts.mode == cliModeCleanup {
 		return runCleanup()
 	}
-	if command == "inspect" {
-		return runInspect(noDocker, readOnly)
+	if opts.mode == cliModeInspect {
+		return runInspect(opts.noDocker, opts.readOnly)
 	}
 
 	cfg, err := loadConfig()
@@ -112,7 +163,7 @@ func run() int {
 		stderrf("failed to load config: %v\n", err)
 		return 1
 	}
-	if noDocker {
+	if opts.noDocker {
 		cfg.Sandbox.Docker = false
 	}
 
@@ -145,7 +196,7 @@ func run() int {
 		cleanup()
 	}()
 
-	if build {
+	if opts.build {
 		dockerfile := cfg.Sandbox.Build.Dockerfile
 		if dockerfile == "" {
 			dockerfile = "Dockerfile"
@@ -162,7 +213,7 @@ func run() int {
 			stderrf("build failed: %v\n", err)
 			return 1
 		}
-		if command == "" {
+		if opts.command == "" {
 			return 0
 		}
 	} else if shouldAutoBuild(cfg) {
@@ -188,8 +239,8 @@ func run() int {
 		}
 	}
 
-	if command == "" {
-		command = "bash"
+	if opts.command == "" {
+		opts.command = "bash"
 	}
 
 	confPath, err := writeSquidConf(cfg.Sandbox.Domains)
@@ -231,7 +282,7 @@ func run() int {
 			return 1
 		}
 	}
-	sandboxErr := runSandbox(rt, resources, cfg, build, readOnly, sshConfigPath, sshKnownHostsPath, command, args)
+	sandboxErr := runSandbox(rt, resources, cfg, opts.build, opts.readOnly, sshConfigPath, sshKnownHostsPath, opts.command, opts.args)
 	if ctx.Err() != nil {
 		return 0
 	}

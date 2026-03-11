@@ -119,10 +119,10 @@ sandboxeed --build
 sandboxeed --no-docker claude
 
 # Print the current version
-sandboxeed version
+sandboxeed --version
 
 # Remove leftover sandboxeed Docker resources
-sandboxeed cleanup
+sandboxeed --cleanup
 ```
 
 ### Flags
@@ -135,14 +135,16 @@ sandboxeed cleanup
 
 ### Built-in commands
 
-- `help` - show the usage summary (`--help` and `-h` also work)
-- `version` - print the app version
-- `inspect` - print the effective merged sandbox config without starting containers
-- `cleanup` - list sandboxeed-managed containers, networks, and volumes and remove them after
+- `--help` - show the usage summary (`-h` also works)
+- `--version` - print the app version
+- `--inspect` - print the effective merged sandbox config without starting containers
+- `--cleanup` - list sandboxeed-managed containers, networks, and volumes and remove them after
   confirmation; images are not removed
 
-Without a built-in command, everything after `sandboxeed` is run inside the sandbox. If no command
-is given, an interactive `bash` shell opens.
+Sandboxeed options are only parsed before the sandboxed command starts. The first positional token is
+always the sandboxed command, and every token after that belongs to the sandboxed command. Use `--`
+to force the next token to be treated as the sandboxed command when it begins with `-` or `--`. If
+no command is given, an interactive `bash` shell opens.
 
 ### Auto-build
 

@@ -262,7 +262,7 @@ func TestIntegrationInspectReportsMergedConfig(t *testing.T) {
 	}
 	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n  pids: 64\n")
 
-	cmd := exec.Command(bin, "inspect")
+	cmd := exec.Command(bin, "--inspect")
 	cmd.Dir = projectDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -337,7 +337,7 @@ func TestIntegrationCleanupRemovesOrphanedResources(t *testing.T) {
 
 	// Run cleanup with "y" piped to stdin.
 	bin := buildSandboxeedBinary(t)
-	cmd := exec.Command(bin, "cleanup")
+	cmd := exec.Command(bin, "--cleanup")
 	cmd.Dir = projectDir
 	cmd.Stdin = strings.NewReader("y\n")
 	out, err := cmd.CombinedOutput()

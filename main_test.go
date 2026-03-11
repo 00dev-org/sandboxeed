@@ -466,6 +466,143 @@ func TestCurrentVersionPrefersInjectedVersion(t *testing.T) {
 	}
 }
 
+func TestParseCLIArgsParsesSandboxFlagsBeforeCommand(t *testing.T) {
+	got, err := parseCLIArgs([]string{"--build", "--no-docker", "--read-only", "claude", "--read-only"})
+	if err != nil {
+		t.Fatalf("parseCLIArgs() error = %v", err)
+	}
+
+	if got.mode != cliModeSandbox {
+		t.Fatalf("parseCLIArgs() mode = %q, want %q", got.mode, cliModeSandbox)
+	}
+	if !got.build || !got.noDocker || !got.readOnly {
+		t.Fatalf("parseCLIArgs() flags = (%v, %v, %v), want all true", got.build, got.noDocker, got.readOnly)
+	}
+	if got.command != "claude" {
+		t.Fatalf("parseCLIArgs() command = %q, want %q", got.command, "claude")
+	}
+	if want := []string{"--read-only"}; !equalStrings(got.args, want) {
+		t.Fatalf("parseCLIArgs() args = %v, want %v", got.args, want)
+	}
+}
+
+func TestParseCLIArgsTreatsBuiltInNamesAsSandboxCommands(t *testing.T) {
+	for _, name := range []string{"cleanup", "inspect", "version", "help"} {
+		t.Run(name, func(t *testing.T) {
+			got, err := parseCLIArgs([]string{name, "arg"})
+			if err != nil {
+				t.Fatalf("parseCLIArgs() error = %v", err)
+			}
+			if got.mode != cliModeSandbox {
+				t.Fatalf("parseCLIArgs() mode = %q, want %q", got.mode, cliModeSandbox)
+			}
+			if got.command != name {
+				t.Fatalf("parseCLIArgs() command = %q, want %q", got.command, name)
+			}
+			if want := []string{"arg"}; !equalStrings(got.args, want) {
+				t.Fatalf("parseCLIArgs() args = %v, want %v", got.args, want)
+			}
+		})
+	}
+}
+
+func TestParseCLIArgsParsesBuiltInsWithDoubleDash(t *testing.T) {
+	tests := []struct {
+		name string
+		argv []string
+		mode cliMode
+	}{
+		{name: "help", argv: []string{"--help"}, mode: cliModeHelp},
+		{name: "help-short", argv: []string{"-h"}, mode: cliModeHelp},
+		{name: "version", argv: []string{"--version"}, mode: cliModeVersion},
+		{name: "inspect", argv: []string{"--inspect"}, mode: cliModeInspect},
+		{name: "cleanup", argv: []string{"--cleanup"}, mode: cliModeCleanup},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseCLIArgs(tt.argv)
+			if err != nil {
+				t.Fatalf("parseCLIArgs() error = %v", err)
+			}
+			if got.mode != tt.mode {
+				t.Fatalf("parseCLIArgs() mode = %q, want %q", got.mode, tt.mode)
+			}
+			if got.command != "" {
+				t.Fatalf("parseCLIArgs() command = %q, want empty", got.command)
+			}
+		})
+	}
+}
+
+func TestParseCLIArgsRejectsUnknownFlagBeforeCommand(t *testing.T) {
+	_, err := parseCLIArgs([]string{"--unknown"})
+	if err == nil {
+		t.Fatalf("parseCLIArgs() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "flag provided but not defined") {
+		t.Fatalf("parseCLIArgs() error = %v, want unknown flag error", err)
+	}
+}
+
+func TestParseCLIArgsSupportsEndOfOptionsMarker(t *testing.T) {
+	got, err := parseCLIArgs([]string{"--build", "--", "--demo", "arg"})
+	if err != nil {
+		t.Fatalf("parseCLIArgs() error = %v", err)
+	}
+	if got.mode != cliModeSandbox {
+		t.Fatalf("parseCLIArgs() mode = %q, want %q", got.mode, cliModeSandbox)
+	}
+	if !got.build {
+		t.Fatalf("parseCLIArgs() build = false, want true")
+	}
+	if got.command != "--demo" {
+		t.Fatalf("parseCLIArgs() command = %q, want %q", got.command, "--demo")
+	}
+	if want := []string{"arg"}; !equalStrings(got.args, want) {
+		t.Fatalf("parseCLIArgs() args = %v, want %v", got.args, want)
+	}
+}
+
+func TestParseCLIArgsAllowsBareEndOfOptionsMarker(t *testing.T) {
+	got, err := parseCLIArgs([]string{"--"})
+	if err != nil {
+		t.Fatalf("parseCLIArgs() error = %v", err)
+	}
+	if got.mode != cliModeSandbox {
+		t.Fatalf("parseCLIArgs() mode = %q, want %q", got.mode, cliModeSandbox)
+	}
+	if got.command != "" {
+		t.Fatalf("parseCLIArgs() command = %q, want empty", got.command)
+	}
+}
+
+func TestParseCLIArgsTreatsEndOfOptionsMarkerAfterCommandAsArgument(t *testing.T) {
+	got, err := parseCLIArgs([]string{"claude", "--", "--help"})
+	if err != nil {
+		t.Fatalf("parseCLIArgs() error = %v", err)
+	}
+	if got.command != "claude" {
+		t.Fatalf("parseCLIArgs() command = %q, want %q", got.command, "claude")
+	}
+	if want := []string{"--", "--help"}; !equalStrings(got.args, want) {
+		t.Fatalf("parseCLIArgs() args = %v, want %v", got.args, want)
+	}
+}
+
+func TestParseCLIArgsKeepsAllTokensAfterBuiltInWithBuiltIn(t *testing.T) {
+	got, err := parseCLIArgs([]string{"--inspect", "cleanup"})
+	if err != nil {
+		t.Fatalf("parseCLIArgs() error = %v", err)
+	}
+	if got.mode != cliModeInspect {
+		t.Fatalf("parseCLIArgs() mode = %q, want %q", got.mode, cliModeInspect)
+	}
+	if want := []string{"cleanup"}; !equalStrings(got.extraArgs, want) {
+		t.Fatalf("parseCLIArgs() extraArgs = %v, want %v", got.extraArgs, want)
+	}
+}
+
 func TestNetworkProjectNameIsDeterministic(t *testing.T) {
 	dir := "/tmp/example/project"
 	got1 := networkProjectName(dir)
