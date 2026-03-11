@@ -10,6 +10,8 @@ import (
 	"time"
 )
 
+const githubKnownHostsCacheTTL = 24 * time.Hour
+
 func needsGitHubSSH(domains []string) bool {
 	for _, d := range domains {
 		d = strings.TrimSpace(d)
@@ -63,6 +65,67 @@ func fetchGitHubKnownHosts() (string, error) {
 	return sb.String(), nil
 }
 
+func githubKnownHostsCachePath() (string, error) {
+	cacheDir, err := os.UserCacheDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve user cache directory: %w", err)
+	}
+	return filepath.Join(cacheDir, "sandboxeed", "github_known_hosts"), nil
+}
+
+func readCachedGitHubKnownHosts(now time.Time) (string, bool, error) {
+	cachePath, err := githubKnownHostsCachePath()
+	if err != nil {
+		return "", false, err
+	}
+	info, err := os.Stat(cachePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", false, nil
+		}
+		return "", false, fmt.Errorf("failed to stat GitHub host key cache: %w", err)
+	}
+	if now.Sub(info.ModTime()) > githubKnownHostsCacheTTL {
+		return "", false, nil
+	}
+	data, err := os.ReadFile(cachePath)
+	if err != nil {
+		return "", false, fmt.Errorf("failed to read GitHub host key cache: %w", err)
+	}
+	if len(strings.TrimSpace(string(data))) == 0 {
+		return "", false, nil
+	}
+	return string(data), true, nil
+}
+
+func writeCachedGitHubKnownHosts(contents string) error {
+	cachePath, err := githubKnownHostsCachePath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(cachePath), 0o755); err != nil {
+		return fmt.Errorf("failed to create GitHub host key cache directory: %w", err)
+	}
+	if err := os.WriteFile(cachePath, []byte(contents), 0o644); err != nil {
+		return fmt.Errorf("failed to write GitHub host key cache: %w", err)
+	}
+	return nil
+}
+
+func loadGitHubKnownHosts() (string, error) {
+	cached, ok, err := readCachedGitHubKnownHosts(time.Now())
+	if err == nil && ok {
+		return cached, nil
+	}
+
+	knownHosts, err := fetchGitHubKnownHosts()
+	if err != nil {
+		return "", err
+	}
+	_ = writeCachedGitHubKnownHosts(knownHosts)
+	return knownHosts, nil
+}
+
 func writeSSHFiles() (configPath, knownHostsPath string, err error) {
 	dir, err := os.MkdirTemp("", "sandboxeed-ssh-")
 	if err != nil {
@@ -75,7 +138,7 @@ func writeSSHFiles() (configPath, knownHostsPath string, err error) {
 		return "", "", fmt.Errorf("failed to write SSH config: %w", err)
 	}
 
-	knownHosts, err := fetchGitHubKnownHosts()
+	knownHosts, err := loadGitHubKnownHosts()
 	if err != nil {
 		os.RemoveAll(dir)
 		return "", "", err
