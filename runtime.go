@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -67,7 +68,7 @@ type DockerCLI struct {
 }
 
 func (d *DockerCLI) Build(dockerfile, tag, contextDir string) error {
-	cmd := exec.CommandContext(d.ctx, d.command(), buildArgs(dockerfile, tag, contextDir)...)
+	cmd := exec.CommandContext(d.ctx, d.command(), buildArgs(d.command(), d.engine, runtime.GOOS, dockerfile, tag, contextDir)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
@@ -211,8 +212,13 @@ func (d *DockerCLI) command() string {
 	return "docker"
 }
 
-func buildArgs(dockerfile, tag, contextDir string) []string {
-	return []string{"build", "--no-cache", "-f", dockerfile, "-t", tag, contextDir}
+func buildArgs(binary string, engine containerEngine, goos, dockerfile, tag, contextDir string) []string {
+	args := []string{"build", "--no-cache"}
+	if shouldLoadBuiltImage(binary, engine, goos) {
+		args = append(args, "--load")
+	}
+	args = append(args, "-f", dockerfile, "-t", tag, contextDir)
+	return args
 }
 
 func detectContainerEngine(binary string) containerEngine {
@@ -243,6 +249,10 @@ func classifyContainerEngine(output string) containerEngine {
 		return enginePodman
 	}
 	return engineDocker
+}
+
+func shouldLoadBuiltImage(binary string, engine containerEngine, goos string) bool {
+	return strings.EqualFold(binary, "docker") && engine == enginePodman && goos == "darwin"
 }
 
 func removeContainerArgs(engine containerEngine, name string) []string {

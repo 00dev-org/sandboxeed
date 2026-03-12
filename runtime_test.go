@@ -3,7 +3,7 @@ package main
 import "testing"
 
 func TestBuildArgs(t *testing.T) {
-	got := buildArgs("Dockerfile.sandbox", "example:latest", ".")
+	got := buildArgs("docker", engineDocker, "linux", "Dockerfile.sandbox", "example:latest", ".")
 	want := []string{"build", "--no-cache", "-f", "Dockerfile.sandbox", "-t", "example:latest", "."}
 
 	if len(got) != len(want) {
@@ -13,6 +13,43 @@ func TestBuildArgs(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("buildArgs()[%d] = %q, want %q\nargs = %v", i, got[i], want[i], got)
 		}
+	}
+}
+
+func TestBuildArgsAddsLoadForDockerCLIAgainstPodmanOnMacOS(t *testing.T) {
+	got := buildArgs("docker", enginePodman, "darwin", "Dockerfile.sandbox", "example:latest", ".")
+	want := []string{"build", "--no-cache", "--load", "-f", "Dockerfile.sandbox", "-t", "example:latest", "."}
+
+	if len(got) != len(want) {
+		t.Fatalf("buildArgs() len = %d, want %d\nargs = %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("buildArgs()[%d] = %q, want %q\nargs = %v", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestShouldLoadBuiltImage(t *testing.T) {
+	tests := []struct {
+		name   string
+		binary string
+		engine containerEngine
+		goos   string
+		want   bool
+	}{
+		{name: "docker on docker macos", binary: "docker", engine: engineDocker, goos: "darwin", want: false},
+		{name: "docker on podman macos", binary: "docker", engine: enginePodman, goos: "darwin", want: true},
+		{name: "docker on podman linux", binary: "docker", engine: enginePodman, goos: "linux", want: false},
+		{name: "podman native macos", binary: "podman", engine: enginePodman, goos: "darwin", want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldLoadBuiltImage(tc.binary, tc.engine, tc.goos); got != tc.want {
+				t.Fatalf("shouldLoadBuiltImage(%q, %q, %q) = %v, want %v", tc.binary, tc.engine, tc.goos, got, tc.want)
+			}
+		})
 	}
 }
 
