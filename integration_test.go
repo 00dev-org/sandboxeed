@@ -384,6 +384,44 @@ func TestIntegrationReadOnlyAllowsWriteToNonMountPaths(t *testing.T) {
 	}
 }
 
+func TestIntegrationInterruptDuringStartupAfterProxyAppearsCleansResources(t *testing.T) {
+	projectDir := workspaceTempDir(t)
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n")
+
+	session := startSandboxStartupSession(t, projectDir, "")
+	proxyContainer, err := waitForProjectContainer(session.projectName, "proxy")
+	if err != nil {
+		stopSandboxSession(t, session)
+		t.Fatalf("proxy container did not appear: %v\nstdout:\n%s\nstderr:\n%s", err, session.stdout.String(), session.stderr.String())
+	}
+	if proxyContainer == "" {
+		stopSandboxSession(t, session)
+		t.Fatal("proxy container name is empty")
+	}
+
+	stopSandboxSession(t, session)
+	assertNoProjectResources(t, session.projectName)
+}
+
+func TestIntegrationInterruptDuringStartupAfterDindAppearsCleansResources(t *testing.T) {
+	projectDir := workspaceTempDir(t)
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n  docker: true\n")
+
+	session := startSandboxStartupSession(t, projectDir, "")
+	dindContainer, err := waitForProjectContainer(session.projectName, "dind")
+	if err != nil {
+		stopSandboxSession(t, session)
+		t.Fatalf("dind container did not appear: %v\nstdout:\n%s\nstderr:\n%s", err, session.stdout.String(), session.stderr.String())
+	}
+	if dindContainer == "" {
+		stopSandboxSession(t, session)
+		t.Fatal("dind container name is empty")
+	}
+
+	stopSandboxSession(t, session)
+	assertNoProjectResources(t, session.projectName)
+}
+
 func buildSandboxeedBinary(t *testing.T) string {
 	t.Helper()
 
@@ -522,6 +560,45 @@ func startSandboxSessionFromDirWithFlags(t *testing.T, projectDir, flags string)
 		stopSandboxSession(t, session)
 		t.Fatalf("egress network did not appear: %v\nstdout:\n%s\nstderr:\n%s", err, session.stdout.String(), session.stderr.String())
 	}
+
+	t.Cleanup(func() {
+		stopSandboxSession(t, session)
+		cleanupProjectResources(t, session.projectName)
+		assertNoProjectResources(t, session.projectName)
+	})
+
+	return session
+}
+
+func startSandboxStartupSession(t *testing.T, projectDir, flags string) *sandboxSession {
+	t.Helper()
+
+	ensureDockerImage(t, "busybox:1.36")
+	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
+	ensureDockerImageOrSkip(t, "docker:dind")
+
+	session := &sandboxSession{
+		projectName: networkProjectName(projectDir),
+		projectDir:  projectDir,
+		stdout:      &bytes.Buffer{},
+		stderr:      &bytes.Buffer{},
+	}
+
+	bin := buildSandboxeedBinary(t)
+	args := []string{}
+	if flags != "" {
+		args = append(args, strings.Fields(flags)...)
+	}
+	args = append(args, "sh", "-lc", "echo SHOULD_NOT_RUN")
+
+	cmd := exec.Command(bin, args...)
+	cmd.Dir = projectDir
+	cmd.Stdout = session.stdout
+	cmd.Stderr = session.stderr
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("failed to start sandboxeed startup session: %v", err)
+	}
+	session.cmd = cmd
 
 	t.Cleanup(func() {
 		stopSandboxSession(t, session)

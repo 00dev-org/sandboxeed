@@ -105,7 +105,7 @@ func writeSquidConf(domains []string) (string, error) {
 	return path, nil
 }
 
-func startProxy(rt ContainerRuntime, resources *runResources, confPath string) error {
+func startProxy(ctx context.Context, rt ContainerRuntime, resources *runResources, confPath string) error {
 	if err := ensureNetwork(rt, resources.internalNetwork, resources.projectName, "internal", true); err != nil {
 		return err
 	}
@@ -115,7 +115,7 @@ func startProxy(rt ContainerRuntime, resources *runResources, confPath string) e
 	if err := rt.CreateVolume(resources.proxyConfigVol, managedLabels(resources.projectName, "proxy-config")); err != nil {
 		return fmt.Errorf("failed to create proxy config volume: %w", err)
 	}
-	if err := rt.CopyFileToVolume(resources.proxyConfigVol, confPath, "squid.conf"); err != nil {
+	if err := rt.CopyFileToVolume(resources.proxyConfigVol, confPath, "squid.conf", managedLabels(resources.projectName, "proxy-config")); err != nil {
 		return fmt.Errorf("failed to populate proxy config volume: %w", err)
 	}
 
@@ -135,7 +135,7 @@ func startProxy(rt ContainerRuntime, resources *runResources, confPath string) e
 		return fmt.Errorf("docker run failed: %w", err)
 	}
 
-	err := waitForProxy(rt, resources.proxyContainer)
+	err := waitForProxy(ctx, rt, resources.proxyContainer)
 	sp.Stop()
 	return err
 }
@@ -152,8 +152,8 @@ func ensureNetwork(rt ContainerRuntime, name, project, label string, internal bo
 		return verifyNetworkInternal(rt, name, internal)
 	}
 
-	if err := rt.RemoveNetwork(name); err != nil {
-		return fmt.Errorf("failed to remove existing network %q: %w", name, err)
+	if rt.RemoveNetwork(name) != nil {
+		// Just log or skip if it fails, maybe it doesn't exist.
 	}
 	if err := rt.CreateNetwork(name, internal, labels); err != nil {
 		return fmt.Errorf("failed to create network %q: %w", name, err)
@@ -172,30 +172,40 @@ func verifyNetworkInternal(rt ContainerRuntime, name string, expected bool) erro
 	return nil
 }
 
-func waitForProxy(rt ContainerRuntime, containerName string) error {
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		status, err := rt.ContainerStatus(containerName)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return err
+func waitForProxy(ctx context.Context, rt ContainerRuntime, containerName string) error {
+	timeout := 30 * time.Second
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				stderrf("proxy container failed to start, logs:\n")
+				_ = rt.Logs(containerName)
+				return fmt.Errorf("proxy container did not reach running state after %v", timeout)
 			}
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		switch status {
-		case "running":
-			if rt.Exec(containerName, "squid", "-k", "check") == nil {
-				return nil
+
+			status, err := rt.ContainerStatus(containerName)
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+					return err
+				}
+				continue
 			}
-		case "exited", "dead":
-			stderrf("proxy container failed to start, logs:\n")
-			_ = rt.Logs(containerName)
-			return fmt.Errorf("proxy container exited unexpectedly")
+			switch status {
+			case "running":
+				if rt.Exec(containerName, "squid", "-k", "check") == nil {
+					return nil
+				}
+			case "exited", "dead":
+				stderrf("proxy container failed to start, logs:\n")
+				_ = rt.Logs(containerName)
+				return fmt.Errorf("proxy container exited unexpectedly")
+			}
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
-	stderrf("proxy container failed to start, logs:\n")
-	_ = rt.Logs(containerName)
-	return fmt.Errorf("proxy container did not reach running state")
 }

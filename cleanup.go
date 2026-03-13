@@ -79,25 +79,26 @@ func runCleanup() int {
 		return 0
 	}
 
+	exitCode := 0
 	for _, name := range targets.containers {
 		if err := removeDockerObject("container", name); err != nil {
 			stderrf("failed to remove container %q: %v\n", name, err)
-			return 1
+			exitCode = 1
 		}
 	}
 	for _, name := range targets.networks {
 		if err := removeDockerObject("network", name); err != nil {
 			stderrf("failed to remove network %q: %v\n", name, err)
-			return 1
+			exitCode = 1
 		}
 	}
 	for _, name := range targets.volumes {
 		if err := removeDockerObject("volume", name); err != nil {
 			stderrf("failed to remove volume %q: %v\n", name, err)
-			return 1
+			exitCode = 1
 		}
 	}
-	return 0
+	return exitCode
 }
 
 func dockerLines(args ...string) ([]string, error) {

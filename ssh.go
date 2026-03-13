@@ -22,10 +22,10 @@ func needsGitHubSSH(domains []string) bool {
 	return false
 }
 
-const sshConfigContent = `Host github.com
-    ProxyCommand corkscrew proxy 3128 %h %p
+const sshConfigContentTemplate = `Host github.com
+    ProxyCommand corkscrew proxy 3128 %%h %%p
     StrictHostKeyChecking yes
-    UserKnownHostsFile /dev/null
+    UserKnownHostsFile %s
 `
 
 type githubMeta struct {
@@ -132,12 +132,6 @@ func writeSSHFiles() (configPath, knownHostsPath string, err error) {
 		return "", "", err
 	}
 
-	configPath = filepath.Join(dir, "ssh_config")
-	if err := os.WriteFile(configPath, []byte(sshConfigContent), 0o600); err != nil {
-		os.RemoveAll(dir)
-		return "", "", fmt.Errorf("failed to write SSH config: %w", err)
-	}
-
 	knownHosts, err := loadGitHubKnownHosts()
 	if err != nil {
 		os.RemoveAll(dir)
@@ -148,6 +142,13 @@ func writeSSHFiles() (configPath, knownHostsPath string, err error) {
 	if err := os.WriteFile(knownHostsPath, []byte(knownHosts), 0o644); err != nil {
 		os.RemoveAll(dir)
 		return "", "", fmt.Errorf("failed to write known hosts: %w", err)
+	}
+
+	configPath = filepath.Join(dir, "ssh_config")
+	content := fmt.Sprintf(sshConfigContentTemplate, "/etc/ssh/ssh_known_hosts")
+	if err := os.WriteFile(configPath, []byte(content), 0o600); err != nil {
+		os.RemoveAll(dir)
+		return "", "", fmt.Errorf("failed to write SSH config: %w", err)
 	}
 
 	return configPath, knownHostsPath, nil

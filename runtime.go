@@ -48,7 +48,7 @@ type ContainerRuntime interface {
 	ImageExists(tag string) (bool, error)
 	RunDetached(opts RunOpts) error
 	RunInteractive(opts RunOpts) error
-	CopyFileToVolume(volumeName, srcPath, destName string) error
+	CopyFileToVolume(volumeName, srcPath, destName string, labels map[string]string) error
 	RemoveContainer(name string) error
 	ContainerStatus(name string) (string, error)
 	Exec(container string, cmd ...string) error
@@ -121,15 +121,23 @@ func (d *DockerCLI) RunInteractive(opts RunOpts) error {
 	return cmd.Run()
 }
 
-func (d *DockerCLI) CopyFileToVolume(volumeName, srcPath, destName string) error {
+func (d *DockerCLI) CopyFileToVolume(volumeName, srcPath, destName string, labels map[string]string) error {
 	helperName := fmt.Sprintf("sandboxeed-copy-%d-%d", os.Getpid(), time.Now().UnixNano())
 	createArgs := []string{
 		"create",
 		"--name", helperName,
 		"-v", volumeName + ":/config",
-		"ubuntu/squid:latest",
-		"sh", "-c", "sleep 300",
 	}
+	labelKeys := make([]string, 0, len(labels))
+	for k := range labels {
+		labelKeys = append(labelKeys, k)
+	}
+	sort.Strings(labelKeys)
+	for _, k := range labelKeys {
+		createArgs = append(createArgs, "--label", k+"="+labels[k])
+	}
+	createArgs = append(createArgs, "ubuntu/squid:latest", "sh", "-c", "sleep 300")
+
 	if err := exec.CommandContext(d.ctx, d.command(), createArgs...).Run(); err != nil {
 		return err
 	}

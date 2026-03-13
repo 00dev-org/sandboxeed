@@ -191,11 +191,6 @@ func run() int {
 	}
 	defer cleanup()
 
-	go func() {
-		<-ctx.Done()
-		cleanup()
-	}()
-
 	if opts.build {
 		dockerfile := cfg.Sandbox.Build.Dockerfile
 		if dockerfile == "" {
@@ -265,7 +260,7 @@ func run() int {
 		defer removePath(filepath.Dir(sshConfigPath))
 	}
 
-	if err := startProxy(rt, resources, confPath); err != nil {
+	if err := startProxy(ctx, rt, resources, confPath); err != nil {
 		if ctx.Err() != nil {
 			return 0
 		}
@@ -274,7 +269,7 @@ func run() int {
 	}
 
 	if cfg.Sandbox.Docker {
-		if err := startDind(rt, resources); err != nil {
+		if err := startDind(ctx, rt, resources); err != nil {
 			if ctx.Err() != nil {
 				return 0
 			}

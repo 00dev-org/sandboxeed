@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-func startDind(rt ContainerRuntime, resources *runResources) error {
+func startDind(ctx context.Context, rt ContainerRuntime, resources *runResources) error {
 	if err := rt.CreateVolume(resources.dindVolume, managedLabels(resources.projectName, "volume")); err != nil {
 		return fmt.Errorf("failed to create dind volume: %w", err)
 	}
@@ -34,7 +34,7 @@ func startDind(rt ContainerRuntime, resources *runResources) error {
 		return fmt.Errorf("dind container failed to start: %w", err)
 	}
 
-	err := waitForDind(rt, resources.dindContainer)
+	err := waitForDind(ctx, rt, resources.dindContainer)
 	sp.Stop()
 	return err
 }
@@ -65,30 +65,40 @@ func cleanupResources(rt ContainerRuntime, resources *runResources) {
 	}
 }
 
-func waitForDind(rt ContainerRuntime, containerName string) error {
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		status, err := rt.ContainerStatus(containerName)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				return err
+func waitForDind(ctx context.Context, rt ContainerRuntime, containerName string) error {
+	timeout := 30 * time.Second
+	deadline := time.Now().Add(timeout)
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			if time.Now().After(deadline) {
+				stderrf("dind container failed to start, logs:\n")
+				_ = rt.Logs(containerName)
+				return fmt.Errorf("dind container did not reach running state after %v", timeout)
 			}
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-		switch status {
-		case "exited", "dead":
-			stderrf("dind container failed to start, logs:\n")
-			_ = rt.Logs(containerName)
-			return fmt.Errorf("dind container exited unexpectedly")
-		case "running":
-			if rt.Exec(containerName, "docker", "version") == nil {
-				return nil
+
+			status, err := rt.ContainerStatus(containerName)
+			if err != nil {
+				if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+					return err
+				}
+				continue
+			}
+			switch status {
+			case "exited", "dead":
+				stderrf("dind container failed to start, logs:\n")
+				_ = rt.Logs(containerName)
+				return fmt.Errorf("dind container exited unexpectedly")
+			case "running":
+				if rt.Exec(containerName, "docker", "version") == nil {
+					return nil
+				}
 			}
 		}
-		time.Sleep(500 * time.Millisecond)
 	}
-	stderrf("dind container failed to start, logs:\n")
-	_ = rt.Logs(containerName)
-	return fmt.Errorf("docker daemon did not become ready")
 }
