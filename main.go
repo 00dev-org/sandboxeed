@@ -47,7 +47,7 @@ func printHelp() {
 	fmt.Printf(`sandboxeed
 
 Usage:
-  sandboxeed [--build] [--no-docker] [--read-only] [command] [args...]
+  sandboxeed [--build] [--no-docker] [--read-only] [--offline] [command] [args...]
   sandboxeed --help
   sandboxeed --version
   sandboxeed --inspect
@@ -57,6 +57,7 @@ Flags:
   --build       Build the sandbox image; if a command is provided, run it afterward.
   --no-docker   Skip Docker-in-Docker even if docker: true is set in the config.
   --read-only   Mount all volumes as read-only inside the sandbox.
+  --offline     Force no outbound network for this run and skip proxy startup.
   --help        Show this help text.
   --version     Print the app version.
   --inspect     Print the effective sandbox configuration.
@@ -79,6 +80,7 @@ type cliOptions struct {
 	build     bool
 	noDocker  bool
 	readOnly  bool
+	offline   bool
 	command   string
 	args      []string
 	extraArgs []string
@@ -91,6 +93,7 @@ func parseCLIArgs(argv []string) (cliOptions, error) {
 	fs.BoolVar(&opts.build, "build", false, "")
 	fs.BoolVar(&opts.noDocker, "no-docker", false, "")
 	fs.BoolVar(&opts.readOnly, "read-only", false, "")
+	fs.BoolVar(&opts.offline, "offline", false, "")
 
 	help := fs.Bool("help", false, "")
 	fs.BoolVar(help, "h", false, "")
@@ -155,7 +158,7 @@ func run() int {
 		return runCleanup()
 	}
 	if opts.mode == cliModeInspect {
-		return runInspect(opts.noDocker, opts.readOnly)
+		return runInspect(opts.noDocker, opts.readOnly, opts.offline)
 	}
 
 	cfg, err := loadConfig()
@@ -163,9 +166,7 @@ func run() int {
 		stderrf("failed to load config: %v\n", err)
 		return 1
 	}
-	if opts.noDocker {
-		cfg.Sandbox.Docker = false
-	}
+	applyCLIOverrides(cfg, opts.noDocker, opts.offline)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -238,46 +239,56 @@ func run() int {
 		opts.command = "bash"
 	}
 
-	confPath, err := writeSquidConf(cfg.Sandbox.Domains)
-	if err != nil {
-		stderrf("failed to write squid.conf: %v\n", err)
-		return 1
-	}
-	defer removePath(filepath.Dir(confPath))
-
 	var sshConfigPath, sshKnownHostsPath string
-	if needsGitHubSSH(cfg.Sandbox.Domains) {
-		sp := startSpinner("Fetching GitHub host keys")
-		sshConfigPath, sshKnownHostsPath, err = writeSSHFiles()
-		sp.Stop()
+	if opts.offline {
+		if err := ensureNetwork(rt, resources.internalNetwork, resources.projectName, "internal", true); err != nil {
+			if ctx.Err() != nil {
+				return 0
+			}
+			stderrf("failed to create internal network: %v\n", err)
+			return 1
+		}
+	} else {
+		confPath, err := writeSquidConf(cfg.Sandbox.Domains)
 		if err != nil {
+			stderrf("failed to write squid.conf: %v\n", err)
+			return 1
+		}
+		defer removePath(filepath.Dir(confPath))
+
+		if needsGitHubSSH(cfg.Sandbox.Domains) {
+			sp := startSpinner("Fetching GitHub host keys")
+			sshConfigPath, sshKnownHostsPath, err = writeSSHFiles()
+			sp.Stop()
+			if err != nil {
+				if ctx.Err() != nil {
+					return 0
+				}
+				stderrf("failed to prepare SSH config: %v\n", err)
+				return 1
+			}
+			defer removePath(filepath.Dir(sshConfigPath))
+		}
+
+		if err := startProxy(ctx, rt, resources, confPath); err != nil {
 			if ctx.Err() != nil {
 				return 0
 			}
-			stderrf("failed to prepare SSH config: %v\n", err)
+			stderrf("failed to start proxy: %v\n", err)
 			return 1
 		}
-		defer removePath(filepath.Dir(sshConfigPath))
-	}
 
-	if err := startProxy(ctx, rt, resources, confPath); err != nil {
-		if ctx.Err() != nil {
-			return 0
-		}
-		stderrf("failed to start proxy: %v\n", err)
-		return 1
-	}
-
-	if cfg.Sandbox.Docker {
-		if err := startDind(ctx, rt, resources); err != nil {
-			if ctx.Err() != nil {
-				return 0
+		if cfg.Sandbox.Docker {
+			if err := startDind(ctx, rt, resources); err != nil {
+				if ctx.Err() != nil {
+					return 0
+				}
+				stderrf("failed to start docker-in-docker: %v\n", err)
+				return 1
 			}
-			stderrf("failed to start docker-in-docker: %v\n", err)
-			return 1
 		}
 	}
-	sandboxErr := runSandbox(rt, resources, cfg, opts.build, opts.readOnly, sshConfigPath, sshKnownHostsPath, opts.command, opts.args)
+	sandboxErr := runSandbox(rt, resources, cfg, opts.build, opts.readOnly, opts.offline, sshConfigPath, sshKnownHostsPath, opts.command, opts.args)
 	if ctx.Err() != nil {
 		return 0
 	}
@@ -294,15 +305,13 @@ func run() int {
 	return 0
 }
 
-func runInspect(noDocker, readOnly bool) int {
+func runInspect(noDocker, readOnly, offline bool) int {
 	cfg, err := loadConfig()
 	if err != nil {
 		stderrf("failed to load config: %v\n", err)
 		return 1
 	}
-	if noDocker {
-		cfg.Sandbox.Docker = false
-	}
+	applyCLIOverrides(cfg, noDocker, offline)
 
 	dir, err := os.Getwd()
 	if err != nil {
@@ -310,7 +319,7 @@ func runInspect(noDocker, readOnly bool) int {
 		return 1
 	}
 
-	resolved := resolveSandboxConfig(newRunResources(dir), cfg, false, readOnly, "", "")
+	resolved := resolveSandboxConfig(newRunResources(dir), cfg, false, readOnly, offline, "", "")
 	data, err := yaml.Marshal(struct {
 		Sandbox ResolvedSandboxConfig `yaml:"sandbox"`
 	}{Sandbox: resolved})
@@ -320,6 +329,15 @@ func runInspect(noDocker, readOnly bool) int {
 	}
 	stdoutf("%s", data)
 	return 0
+}
+
+func applyCLIOverrides(cfg *Config, noDocker, offline bool) {
+	if noDocker || offline {
+		cfg.Sandbox.Docker = false
+	}
+	if offline {
+		cfg.Sandbox.Domains = nil
+	}
 }
 
 func resolveDockerfilePath(projectDir, dockerfile string) (string, error) {

@@ -467,7 +467,7 @@ func TestCurrentVersionPrefersInjectedVersion(t *testing.T) {
 }
 
 func TestParseCLIArgsParsesSandboxFlagsBeforeCommand(t *testing.T) {
-	got, err := parseCLIArgs([]string{"--build", "--no-docker", "--read-only", "claude", "--read-only"})
+	got, err := parseCLIArgs([]string{"--build", "--no-docker", "--read-only", "--offline", "claude", "--read-only"})
 	if err != nil {
 		t.Fatalf("parseCLIArgs() error = %v", err)
 	}
@@ -475,8 +475,8 @@ func TestParseCLIArgsParsesSandboxFlagsBeforeCommand(t *testing.T) {
 	if got.mode != cliModeSandbox {
 		t.Fatalf("parseCLIArgs() mode = %q, want %q", got.mode, cliModeSandbox)
 	}
-	if !got.build || !got.noDocker || !got.readOnly {
-		t.Fatalf("parseCLIArgs() flags = (%v, %v, %v), want all true", got.build, got.noDocker, got.readOnly)
+	if !got.build || !got.noDocker || !got.readOnly || !got.offline {
+		t.Fatalf("parseCLIArgs() flags = (%v, %v, %v, %v), want all true", got.build, got.noDocker, got.readOnly, got.offline)
 	}
 	if got.command != "claude" {
 		t.Fatalf("parseCLIArgs() command = %q, want %q", got.command, "claude")
@@ -793,9 +793,45 @@ func TestResolveSandboxConfigIncludesLimits(t *testing.T) {
 	cfg.Sandbox.Pids = 128
 	cfg.Sandbox.Environment = []string{"APP_ENV=test"}
 
-	resolved := resolveSandboxConfig(newRunResources("/workspace/demo"), cfg, false, false, "", "")
+	resolved := resolveSandboxConfig(newRunResources("/workspace/demo"), cfg, false, false, false, "", "")
 	if resolved.Memory != "512m" || resolved.CPUs != "1.5" || resolved.Pids != 128 {
 		t.Fatalf("resolveSandboxConfig() limits = (%q, %q, %d), want (%q, %q, %d)", resolved.Memory, resolved.CPUs, resolved.Pids, "512m", "1.5", 128)
+	}
+}
+
+func TestResolveSandboxConfigOfflineOmitsProxyEnv(t *testing.T) {
+	cfg := &Config{}
+	cfg.Sandbox.Image = "alpine:3.22"
+	cfg.Sandbox.Docker = true
+	cfg.Sandbox.Environment = []string{"APP_ENV=test"}
+
+	resolved := resolveSandboxConfig(newRunResources("/workspace/demo"), cfg, false, false, true, "", "")
+	if resolved.Docker != true {
+		t.Fatalf("resolveSandboxConfig() docker = %v, want unchanged config value", resolved.Docker)
+	}
+	if strings.Contains(strings.Join(resolved.Environment, "\n"), "HTTP_PROXY=") {
+		t.Fatalf("resolveSandboxConfig() environment = %v, want no injected proxy env vars", resolved.Environment)
+	}
+	if strings.Contains(strings.Join(resolved.Environment, "\n"), "DOCKER_HOST=") {
+		t.Fatalf("resolveSandboxConfig() environment = %v, want no DOCKER_HOST in offline mode", resolved.Environment)
+	}
+	if want := []string{"APP_ENV=test"}; !equalStrings(resolved.Environment, want) {
+		t.Fatalf("resolveSandboxConfig() environment = %v, want %v", resolved.Environment, want)
+	}
+}
+
+func TestApplyCLIOverridesOfflineClearsDomainsAndDisablesDocker(t *testing.T) {
+	cfg := &Config{}
+	cfg.Sandbox.Docker = true
+	cfg.Sandbox.Domains = []string{"allowed.test"}
+
+	applyCLIOverrides(cfg, false, true)
+
+	if cfg.Sandbox.Docker {
+		t.Fatalf("applyCLIOverrides() docker = true, want false")
+	}
+	if len(cfg.Sandbox.Domains) != 0 {
+		t.Fatalf("applyCLIOverrides() domains = %v, want empty", cfg.Sandbox.Domains)
 	}
 }
 
@@ -813,7 +849,7 @@ func TestRunInspectPrintsResolvedConfig(t *testing.T) {
 		}, "\n"))
 
 		stdout, stderr := captureOutput(t, func() {
-			if code := runInspect(false, false); code != 0 {
+			if code := runInspect(false, false, false); code != 0 {
 				t.Fatalf("runInspect() = %d, want 0", code)
 			}
 		})
@@ -827,6 +863,36 @@ func TestRunInspectPrintsResolvedConfig(t *testing.T) {
 		} {
 			if !strings.Contains(stdout, part) {
 				t.Fatalf("runInspect() output missing %q:\n%s", part, stdout)
+			}
+		}
+	})
+}
+
+func TestRunInspectOfflineReflectsEffectiveOverrides(t *testing.T) {
+	withConfigDirs(t, "", func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  image: alpine:3.22",
+			"  docker: true",
+			"  domains:",
+			"    - allowed.test",
+			"",
+		}, "\n"))
+
+		stdout, stderr := captureOutput(t, func() {
+			if code := runInspect(false, false, true); code != 0 {
+				t.Fatalf("runInspect() = %d, want 0", code)
+			}
+		})
+		if stderr != "" {
+			t.Fatalf("runInspect() stderr = %q, want empty", stderr)
+		}
+		if !strings.Contains(stdout, "docker: false") {
+			t.Fatalf("runInspect() output missing offline docker override:\n%s", stdout)
+		}
+		for _, part := range []string{"HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "DOCKER_HOST", "allowed.test"} {
+			if strings.Contains(stdout, part) {
+				t.Fatalf("runInspect() output unexpectedly contains %q:\n%s", part, stdout)
 			}
 		}
 	})

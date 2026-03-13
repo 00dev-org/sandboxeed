@@ -131,6 +131,29 @@ func TestIntegrationProxyEnvVars(t *testing.T) {
 	}
 }
 
+func TestIntegrationOfflineOmitsProxyEnvVarsAndBlocksNetwork(t *testing.T) {
+	session := startSandboxSessionWithFlags(t, "sandbox:\n  image: busybox:1.36\n  domains:\n    - allowed.test\n  environment:\n    - SANDBOX_TEST=hello_from_config\n", "--offline")
+
+	out, err := execInContainer(session.sandboxContainer, `sh -lc 'echo "HTTP=${HTTP_PROXY:-} HTTPS=${HTTPS_PROXY:-} NOPROXY=${NO_PROXY:-} VAR=$SANDBOX_TEST"'`)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v\noutput:\n%s", err, out)
+	}
+	if !strings.Contains(out, "HTTP= HTTPS= NOPROXY= VAR=hello_from_config") {
+		t.Fatalf("sandbox output missing offline env state:\n%s", out)
+	}
+
+	out, err = execInContainer(
+		session.sandboxContainer,
+		`sh -lc 'unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY no_proxy NO_PROXY; if wget -T 5 -qO- http://allowed.test >/dev/null 2>&1; then echo OFFLINE_BROKEN; exit 1; else echo OFFLINE_OK; fi'`,
+	)
+	if err != nil {
+		t.Fatalf("docker exec failed: %v\noutput:\n%s", err, out)
+	}
+	if !strings.Contains(out, "OFFLINE_OK") {
+		t.Fatalf("sandbox output missing offline block marker:\n%s", out)
+	}
+}
+
 func TestIntegrationWorkingDir(t *testing.T) {
 	ensureDockerImage(t, "busybox:1.36")
 	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
@@ -422,6 +445,29 @@ func TestIntegrationInterruptDuringStartupAfterDindAppearsCleansResources(t *tes
 	assertNoProjectResources(t, session.projectName)
 }
 
+func TestIntegrationOfflineSkipsProxyAndDindContainers(t *testing.T) {
+	projectDir := workspaceTempDir(t)
+	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n  docker: true\n  domains:\n    - allowed.test\n")
+
+	session := startSandboxSessionFromDirWithFlags(t, projectDir, "--offline")
+
+	resources, err := projectResources(session.projectName)
+	if err != nil {
+		t.Fatalf("projectResources() error = %v", err)
+	}
+	for _, resource := range resources {
+		if strings.HasPrefix(resource, "container ") && strings.Contains(resource, "-proxy-") {
+			t.Fatalf("offline run unexpectedly started proxy container: %v", resources)
+		}
+		if strings.HasPrefix(resource, "container ") && strings.Contains(resource, "-dind-") {
+			t.Fatalf("offline run unexpectedly started dind container: %v", resources)
+		}
+		if strings.HasPrefix(resource, "network ") && strings.Contains(resource, "-egress-") {
+			t.Fatalf("offline run unexpectedly created egress network: %v", resources)
+		}
+	}
+}
+
 func buildSandboxeedBinary(t *testing.T) string {
 	t.Helper()
 
@@ -555,10 +601,12 @@ func startSandboxSessionFromDirWithFlags(t *testing.T, projectDir, flags string)
 		stopSandboxSession(t, session)
 		t.Fatalf("sandbox container did not appear: %v\nstdout:\n%s\nstderr:\n%s", err, session.stdout.String(), session.stderr.String())
 	}
-	session.egressNetwork, err = waitForProjectNetwork(session.projectName, "egress")
-	if err != nil {
-		stopSandboxSession(t, session)
-		t.Fatalf("egress network did not appear: %v\nstdout:\n%s\nstderr:\n%s", err, session.stdout.String(), session.stderr.String())
+	if !hasCommandFlag(flags, "--offline") {
+		session.egressNetwork, err = waitForProjectNetwork(session.projectName, "egress")
+		if err != nil {
+			stopSandboxSession(t, session)
+			t.Fatalf("egress network did not appear: %v\nstdout:\n%s\nstderr:\n%s", err, session.stdout.String(), session.stderr.String())
+		}
 	}
 
 	t.Cleanup(func() {
@@ -568,6 +616,15 @@ func startSandboxSessionFromDirWithFlags(t *testing.T, projectDir, flags string)
 	})
 
 	return session
+}
+
+func hasCommandFlag(command, flag string) bool {
+	for _, part := range strings.Fields(command) {
+		if part == flag {
+			return true
+		}
+	}
+	return false
 }
 
 func startSandboxStartupSession(t *testing.T, projectDir, flags string) *sandboxSession {

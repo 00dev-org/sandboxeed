@@ -33,7 +33,7 @@ type ResolvedSandboxConfig struct {
 	User        string   `yaml:"user,omitempty"`
 }
 
-func resolveSandboxConfig(resources *runResources, cfg *Config, built, readOnly bool, sshConfigPath, sshKnownHostsPath string) ResolvedSandboxConfig {
+func resolveSandboxConfig(resources *runResources, cfg *Config, built, readOnly, offline bool, sshConfigPath, sshKnownHostsPath string) ResolvedSandboxConfig {
 	volumes := make([]string, 0, 2+len(defaultVolumes)+len(cfg.Sandbox.Volumes))
 	if sshConfigPath != "" {
 		volumes = append(volumes, sshConfigPath+":/etc/ssh/ssh_config:ro")
@@ -46,10 +46,13 @@ func resolveSandboxConfig(resources *runResources, cfg *Config, built, readOnly 
 	if cfg.Sandbox.Docker {
 		envDefaults = defaultDockerEnvironment
 	}
+	if offline {
+		envDefaults = nil
+	}
 	environment := make([]string, 0, len(envDefaults)+len(cfg.Sandbox.Environment)+1)
 	environment = append(environment, envDefaults...)
 	environment = append(environment, cfg.Sandbox.Environment...)
-	if cfg.Sandbox.Docker {
+	if cfg.Sandbox.Docker && !offline {
 		environment = append(environment, "DOCKER_HOST=tcp://dind:2375")
 	}
 
@@ -89,8 +92,8 @@ func resolveSandboxConfig(resources *runResources, cfg *Config, built, readOnly 
 	}
 }
 
-func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built, readOnly bool, sshConfigPath, sshKnownHostsPath, command string, extraArgs []string) error {
-	resolved := resolveSandboxConfig(resources, cfg, built, readOnly, sshConfigPath, sshKnownHostsPath)
+func runSandbox(rt ContainerRuntime, resources *runResources, cfg *Config, built, readOnly, offline bool, sshConfigPath, sshKnownHostsPath, command string, extraArgs []string) error {
+	resolved := resolveSandboxConfig(resources, cfg, built, readOnly, offline, sshConfigPath, sshKnownHostsPath)
 
 	return rt.RunInteractive(RunOpts{
 		Name:      resources.sandboxContainer,

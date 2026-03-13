@@ -41,7 +41,7 @@ func TestWriteSSHFilesUsesMountedKnownHostsPath(t *testing.T) {
 		t.Fatalf("known_hosts contents = %q, want cached contents", string(knownHostsContents))
 	}
 
-	resolved := resolveSandboxConfig(newRunResources(t.TempDir()), &Config{}, false, false, configPath, knownHostsPath)
+	resolved := resolveSandboxConfig(newRunResources(t.TempDir()), &Config{}, false, false, false, configPath, knownHostsPath)
 	if !containsString(resolved.Volumes, configPath+":/etc/ssh/ssh_config:ro") {
 		t.Fatalf("resolveSandboxConfig() volumes = %v, want ssh config mount", resolved.Volumes)
 	}
