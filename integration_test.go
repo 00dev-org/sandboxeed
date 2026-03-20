@@ -632,7 +632,7 @@ func startSandboxStartupSession(t *testing.T, projectDir, flags string) *sandbox
 
 	ensureDockerImage(t, "busybox:1.36")
 	ensureDockerImageOrSkip(t, "ubuntu/squid:latest")
-	ensureDockerImageOrSkip(t, "docker:dind")
+	ensureDockerImageOrSkip(t, "quay.io/podman/stable")
 
 	session := &sandboxSession{
 		projectName: networkProjectName(projectDir),

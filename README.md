@@ -37,8 +37,8 @@ It addresses common issues across popular agent tools:
   |  |                                                    |                | |
   |  |  +-----------------------------+                   |                | |
   |  |  |       DinD  (optional)      |                   |                | |
-  |  |  |       docker daemon         |                   |                | |
-  |  |  |       DOCKER_HOST=tcp://dind|                   |                | |
+  |  |  |       Podman-in-Docker      |                   |                | |
+  |  |  |       unix:///var/sock/...  |                   |                | |
   |  |  +-----------------------------+                   |                | |
   |  +------------------------------------------------------+--------------+ |
   |                                                         |                |
@@ -132,6 +132,7 @@ sandboxeed --cleanup
 | `--build`     | Build the Docker image (always `--no-cache`); if a command is provided, run it afterward |
 | `--no-docker` | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml`                 |
 | `--read-only` | Mount all volumes (including the project directory) as read-only inside the sandbox      |
+| `--unsafe`    | Run DinD in privileged mode (insecure, for testing only)                                 |
 
 ### Built-in commands
 
@@ -218,9 +219,9 @@ sandbox:
 | `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`). When the same variable appears more than once, the last config layer wins.                 |
 | `working_dir`      | Working directory inside the container. Default: `/workspace`.                                                                                                                                   |
 | `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see [Docker-in-Docker](#docker-in-docker)).                                                                                                   |
-| `memory`           | Memory limit for the sandbox container, passed through to Docker as `--memory`. Supported in both project and user config.                                                                        |
-| `cpus`             | CPU limit for the sandbox container, passed through to Docker as `--cpus`. Supported in both project and user config.                                                                             |
-| `pids`             | PID limit for the sandbox container, passed through to Docker as `--pids-limit`. Supported in both project and user config.                                                                       |
+| `memory`           | Memory limit for the sandbox container, passed through to Docker as `--memory`. Supported in both project and user config.                                                                       |
+| `cpus`             | CPU limit for the sandbox container, passed through to Docker as `--cpus`. Supported in both project and user config.                                                                            |
+| `pids`             | PID limit for the sandbox container, passed through to Docker as `--pids-limit`. Supported in both project and user config.                                                                      |
 | `domains`          | Domains the sandbox is allowed to reach. All other outbound traffic is blocked. User and project domains are combined and deduplicated.                                                          |
 
 ### User config
@@ -329,13 +330,13 @@ If no `sandboxeed.yaml` is found, sandboxeed runs a `bash:latest` container with
 sandboxeed injects several things into the sandbox at runtime - your Dockerfile does not need to
 set these up:
 
-| What              | Where                                   | Notes                                                                                                                                                     |
-|-------------------|-----------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
-| SSH client config | `/etc/ssh/ssh_config`                   | Only when `github.com` or `.github.com` is in `domains`. Routes `github.com` through the proxy via `corkscrew`; overwrites any existing file at that path |
-| GitHub host keys  | `/etc/ssh/ssh_known_hosts`              | Only when `github.com` or `.github.com` is in `domains`. Fetched from the GitHub API at startup; `StrictHostKeyChecking yes`                              |
-| Proxy env vars    | `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` | Set for every run; `NO_PROXY` includes `dind` when `docker: true` so the Docker client bypasses the proxy when talking to the daemon                      |
-| Docker socket     | `DOCKER_HOST=tcp://dind:2375`           | Only when `docker: true`; points at the DinD sidecar                                                                                                      |
-| Project mount     | `.:/workspace`                          | Current directory, always mounted                                                                                                                         |
+| What              | Where                                      | Notes                                                                                                                                                     |
+|-------------------|--------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------|
+| SSH client config | `/etc/ssh/ssh_config`                      | Only when `github.com` or `.github.com` is in `domains`. Routes `github.com` through the proxy via `corkscrew`; overwrites any existing file at that path |
+| GitHub host keys  | `/etc/ssh/ssh_known_hosts`                 | Only when `github.com` or `.github.com` is in `domains`. Fetched from the GitHub API at startup; `StrictHostKeyChecking yes`                              |
+| Proxy env vars    | `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`    | Set for every run                                                                                                                                         |
+| Docker socket     | `DOCKER_HOST=unix:///var/sock/podman.sock` | Only when `docker: true`; shared via a volume from the Podman-in-Docker sidecar                                                                           |
+| Project mount     | `.:/workspace`                             | Current directory, always mounted                                                                                                                         |
 
 **What your Dockerfile must provide:**
 
@@ -355,20 +356,21 @@ set these up:
 
 ## Docker-in-Docker
 
-When `docker: true` is set in the config, sandboxeed starts a `docker:dind` sidecar container on
+When `docker: true` is set in the config, sandboxeed starts a Podman-in-Docker sidecar container on
 the internal network. The sandbox container is configured to use it automatically via
-`DOCKER_HOST=tcp://dind:2375`.
+`DOCKER_HOST=unix:///var/sock/podman.sock`, with the Podman socket shared between the sidecar and
+the sandbox through a Docker volume.
 
-This lets you run `docker` commands inside the sandbox (for example, `docker build` and
-`docker run`) without granting the sandbox container privileged access. The DinD container itself
-runs privileged, but is isolated on the internal network - its outbound traffic goes through the
-Squid proxy like everything else.
+Unlike traditional `docker:dind`, the Podman sidecar does **not** require `--privileged`. It runs
+with a minimal set of capabilities (`SYS_ADMIN` for fuse-overlayfs storage, `seccomp=unconfined`,
+and `apparmor=unconfined`). This blocks the most common container escape vectors — the sidecar
+cannot access host block devices or the host device cgroup.
+
+For testing scenarios that require full privileged access (e.g., creating custom container networks),
+use the `--unsafe` flag to run the DinD sidecar in privileged mode.
 
 Starting the DinD sidecar typically adds about 10 seconds to sandbox startup time. To skip that
 overhead for a single run, use `sandboxeed --no-docker ...` even when `docker: true` is set.
-
-TLS is disabled between the sandbox and DinD since they communicate over an internal-only network
-with no external routing.
 
 When using Docker-in-Docker, make sure your `domains` list includes the registries you need to pull
 from (e.g., `.docker.io`, `.cloudflarestorage.com` for Docker Hub image layers).
@@ -385,8 +387,9 @@ Two Docker networks are created per run:
   no external routing)
 - `<project>-egress-<run-id>` - connects the proxy to the outside world
 
-When Docker-in-Docker is enabled, sandboxeed also creates a per-run labeled volume for
-`/var/lib/docker` inside the DinD sidecar so it can be cleaned up reliably.
+When Docker-in-Docker is enabled, sandboxeed creates per-run labeled volumes for
+`/var/lib/containers` (Podman storage) and `/var/sock` (the shared API socket) inside the DinD
+sidecar so they can be cleaned up reliably.
 
 ## Security considerations
 
@@ -412,9 +415,10 @@ complete security boundary**. Keep the following in mind:
 - **Domain filtering is not bulletproof.** The Squid proxy filters by domain name, not by IP. DNS
   rebinding, tunneling over allowed domains (e.g., via a compromised CDN), or exfiltration through
   DNS itself are not prevented.
-- **Docker-in-Docker runs privileged.** The DinD sidecar requires `--privileged`, which grants full
-  host kernel access to that container. It is isolated on the internal network, but a container
-  escape from DinD could compromise the host. Only set `docker: true` when you need it.
+- **Docker-in-Docker capabilities.** The Podman-in-Docker sidecar runs with `SYS_ADMIN`,
+  `seccomp=unconfined`, and `apparmor=unconfined` — enough for fuse-overlayfs but not enough to
+  access host devices. With `--unsafe`, the sidecar runs fully privileged, which grants host kernel
+  access and should only be used for testing.
 - **No syscall filtering.** The sandbox container runs with Docker's default seccomp profile but no
   additional restrictions. It is not equivalent to a VM-level isolation boundary like gVisor or
   Firecracker.

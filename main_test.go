@@ -653,6 +653,7 @@ func TestNewRunResourcesUsesShortNames(t *testing.T) {
 		got.proxyConfigVol:   `^sandboxeed-[0-9a-f]{8}-proxy-config-[a-z2-7]{8}$`,
 		got.dindContainer:    `^sandboxeed-[0-9a-f]{8}-dind-[a-z2-7]{8}$`,
 		got.dindVolume:       `^sandboxeed-[0-9a-f]{8}-dind-data-[a-z2-7]{8}$`,
+		got.dindSocketVolume: `^sandboxeed-[0-9a-f]{8}-dind-sock-[a-z2-7]{8}$`,
 		got.internalNetwork:  `^sandboxeed-[0-9a-f]{8}-internal-[a-z2-7]{8}$`,
 		got.egressNetwork:    `^sandboxeed-[0-9a-f]{8}-egress-[a-z2-7]{8}$`,
 	}

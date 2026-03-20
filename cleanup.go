@@ -149,7 +149,7 @@ func removeDockerObject(kind, name string) error {
 	var args []string
 	switch kind {
 	case "container":
-		args = removeContainerArgs(containerEngineType(), name)
+		args = removeContainerArgs(containerBinary(), name)
 	case "network":
 		args = []string{"network", "rm", name}
 	case "volume":

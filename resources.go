@@ -25,6 +25,7 @@ type runResources struct {
 	proxyConfigVol   string
 	dindContainer    string
 	dindVolume       string
+	dindSocketVolume string
 	internalNetwork  string
 	egressNetwork    string
 }
@@ -145,6 +146,7 @@ func newRunResources(dir string) *runResources {
 		proxyConfigVol:   fmt.Sprintf("%s-proxy-config-%s", project, runToken),
 		dindContainer:    fmt.Sprintf("%s-dind-%s", project, runToken),
 		dindVolume:       fmt.Sprintf("%s-dind-data-%s", project, runToken),
+		dindSocketVolume: fmt.Sprintf("%s-dind-sock-%s", project, runToken),
 		internalNetwork:  fmt.Sprintf("%s-internal-%s", project, runToken),
 		egressNetwork:    fmt.Sprintf("%s-egress-%s", project, runToken),
 	}

@@ -13,6 +13,7 @@ import (
 )
 
 const squidConfTemplate = `http_port 3128
+shutdown_lifetime 0 seconds
 
 %s
 acl SSL_ports port 22

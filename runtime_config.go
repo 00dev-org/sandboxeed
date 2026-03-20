@@ -12,11 +12,6 @@ var defaultEnvironment = []string{
 	"HTTPS_PROXY=http://proxy:3128",
 	"NO_PROXY=localhost,127.0.0.1",
 }
-var defaultDockerEnvironment = []string{
-	"HTTP_PROXY=http://proxy:3128",
-	"HTTPS_PROXY=http://proxy:3128",
-	"NO_PROXY=localhost,127.0.0.1,dind",
-}
 
 const defaultWorkingDir = "/workspace"
 
@@ -40,12 +35,12 @@ func resolveSandboxConfig(resources *runResources, cfg *Config, built, readOnly,
 		volumes = append(volumes, sshKnownHostsPath+":/etc/ssh/ssh_known_hosts:ro")
 	}
 	volumes = append(volumes, defaultVolumes...)
+	if cfg.Sandbox.Docker && !offline {
+		volumes = append(volumes, resources.dindSocketVolume+":/var/sock")
+	}
 	volumes = append(volumes, cfg.Sandbox.Volumes...)
 
 	envDefaults := defaultEnvironment
-	if cfg.Sandbox.Docker {
-		envDefaults = defaultDockerEnvironment
-	}
 	if offline {
 		envDefaults = nil
 	}
@@ -53,7 +48,7 @@ func resolveSandboxConfig(resources *runResources, cfg *Config, built, readOnly,
 	environment = append(environment, envDefaults...)
 	environment = append(environment, cfg.Sandbox.Environment...)
 	if cfg.Sandbox.Docker && !offline {
-		environment = append(environment, "DOCKER_HOST=tcp://dind:2375")
+		environment = append(environment, "DOCKER_HOST=unix:///var/sock/podman.sock")
 	}
 
 	workingDir := cfg.Sandbox.WorkingDir

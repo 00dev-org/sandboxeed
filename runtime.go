@@ -35,8 +35,11 @@ type RunOpts struct {
 	WorkDir    string
 	Image      string
 	Cmd        []string
-	Privileged bool
-	User       string // passed as --user (e.g. "1000:1000")
+	Privileged  bool
+	CapAdd      []string // passed as --cap-add (e.g. "SYS_ADMIN")
+	Devices     []string // passed as --device (e.g. "/dev/fuse")
+	SecurityOpt []string // passed as --security-opt (e.g. "seccomp=unconfined")
+	User        string   // passed as --user (e.g. "1000:1000")
 	Memory     string
 	CPUs       string
 	PidsLimit  int
@@ -153,7 +156,7 @@ func (d *DockerCLI) CopyFileToVolume(volumeName, srcPath, destName string, label
 }
 
 func (d *DockerCLI) RemoveContainer(name string) error {
-	return exec.Command(d.command(), removeContainerArgs(d.engine, name)...).Run()
+	return exec.Command(d.command(), removeContainerArgs(d.command(), name)...).Run()
 }
 
 func (d *DockerCLI) ContainerStatus(name string) (string, error) {
@@ -263,9 +266,9 @@ func shouldLoadBuiltImage(binary string, engine containerEngine, goos string) bo
 	return strings.EqualFold(binary, "docker") && engine == enginePodman && goos == "darwin"
 }
 
-func removeContainerArgs(engine containerEngine, name string) []string {
+func removeContainerArgs(binary string, name string) []string {
 	args := []string{"rm", "-f"}
-	if engine == enginePodman {
+	if strings.EqualFold(binary, "podman") {
 		args = append(args, "-t", "0")
 	}
 	args = append(args, name)
@@ -276,6 +279,15 @@ func runArgs(opts RunOpts) []string {
 	var args []string
 	if opts.Privileged {
 		args = append(args, "--privileged")
+	}
+	for _, cap := range opts.CapAdd {
+		args = append(args, "--cap-add", cap)
+	}
+	for _, dev := range opts.Devices {
+		args = append(args, "--device", dev)
+	}
+	for _, opt := range opts.SecurityOpt {
+		args = append(args, "--security-opt", opt)
 	}
 	if opts.Name != "" {
 		args = append(args, "--name", opts.Name)

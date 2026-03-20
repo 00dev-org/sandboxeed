@@ -47,7 +47,7 @@ func printHelp() {
 	fmt.Printf(`sandboxeed
 
 Usage:
-  sandboxeed [--build] [--no-docker] [--read-only] [--offline] [command] [args...]
+  sandboxeed [--build] [--no-docker] [--read-only] [--offline] [--unsafe] [command] [args...]
   sandboxeed --help
   sandboxeed --version
   sandboxeed --inspect
@@ -58,6 +58,7 @@ Flags:
   --no-docker   Skip Docker-in-Docker even if docker: true is set in the config.
   --read-only   Mount all volumes as read-only inside the sandbox.
   --offline     Force no outbound network for this run and skip proxy startup.
+  --unsafe      Run DinD in privileged mode (insecure, for testing only).
   --help        Show this help text.
   --version     Print the app version.
   --inspect     Print the effective sandbox configuration.
@@ -81,6 +82,7 @@ type cliOptions struct {
 	noDocker  bool
 	readOnly  bool
 	offline   bool
+	unsafe    bool
 	command   string
 	args      []string
 	extraArgs []string
@@ -94,6 +96,7 @@ func parseCLIArgs(argv []string) (cliOptions, error) {
 	fs.BoolVar(&opts.noDocker, "no-docker", false, "")
 	fs.BoolVar(&opts.readOnly, "read-only", false, "")
 	fs.BoolVar(&opts.offline, "offline", false, "")
+	fs.BoolVar(&opts.unsafe, "unsafe", false, "")
 
 	help := fs.Bool("help", false, "")
 	fs.BoolVar(help, "h", false, "")
@@ -279,7 +282,7 @@ func run() int {
 		}
 
 		if cfg.Sandbox.Docker {
-			if err := startDind(ctx, rt, resources); err != nil {
+			if err := startDind(ctx, rt, resources, opts.unsafe); err != nil {
 				if ctx.Err() != nil {
 					return 0
 				}

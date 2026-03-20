@@ -78,24 +78,24 @@ func TestClassifyContainerEngine(t *testing.T) {
 func TestRemoveContainerArgs(t *testing.T) {
 	tests := []struct {
 		name   string
-		engine containerEngine
+		binary string
 		want   []string
 	}{
 		{
 			name:   "docker",
-			engine: engineDocker,
+			binary: "docker",
 			want:   []string{"rm", "-f", "sandboxeed-test"},
 		},
 		{
 			name:   "podman",
-			engine: enginePodman,
+			binary: "podman",
 			want:   []string{"rm", "-f", "-t", "0", "sandboxeed-test"},
 		},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := removeContainerArgs(tc.engine, "sandboxeed-test")
+			got := removeContainerArgs(tc.binary, "sandboxeed-test")
 			if len(got) != len(tc.want) {
 				t.Fatalf("removeContainerArgs() len = %d, want %d\nargs = %v", len(got), len(tc.want), got)
 			}
@@ -110,23 +110,27 @@ func TestRemoveContainerArgs(t *testing.T) {
 
 func TestRunArgsIncludesConfiguredOptions(t *testing.T) {
 	opts := RunOpts{
-		Name:       "sandboxeed-test",
-		Networks:   []NetworkAttachment{{Name: "internal", Alias: "proxy"}, {Name: "egress"}},
-		Volumes:    []string{".:/workspace", "/tmp/cache:/cache"},
-		Env:        []string{"HTTP_PROXY=http://proxy:3128", "NO_PROXY=localhost"},
-		Labels:     map[string]string{"sandboxeed.managed": "true"},
-		WorkDir:    "/workspace",
-		Image:      "alpine:3.22",
-		Cmd:        []string{"sh", "-lc", "echo ok"},
-		Privileged: true,
-		Memory:     "512m",
-		CPUs:       "1.5",
-		PidsLimit:  256,
+		Name:        "sandboxeed-test",
+		Networks:    []NetworkAttachment{{Name: "internal", Alias: "proxy"}, {Name: "egress"}},
+		Volumes:     []string{".:/workspace", "/tmp/cache:/cache"},
+		Env:         []string{"HTTP_PROXY=http://proxy:3128", "NO_PROXY=localhost"},
+		Labels:      map[string]string{"sandboxeed.managed": "true"},
+		WorkDir:     "/workspace",
+		Image:       "alpine:3.22",
+		Cmd:         []string{"sh", "-lc", "echo ok"},
+		CapAdd:      []string{"SYS_ADMIN"},
+		Devices:     []string{"/dev/fuse"},
+		SecurityOpt: []string{"seccomp=unconfined"},
+		Memory:      "512m",
+		CPUs:        "1.5",
+		PidsLimit:   256,
 	}
 
 	got := runArgs(opts)
 	want := []string{
-		"--privileged",
+		"--cap-add", "SYS_ADMIN",
+		"--device", "/dev/fuse",
+		"--security-opt", "seccomp=unconfined",
 		"--name", "sandboxeed-test",
 		"--network", "internal",
 		"--network-alias", "proxy",
