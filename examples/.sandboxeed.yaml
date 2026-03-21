@@ -1,11 +1,24 @@
 sandbox:
+  # Mount sandboxeed-managed copies instead of real host paths so that
+  # insecure sandbox settings (auto-approve, bypassed permissions) stay
+  # separate from your secure host config. Copy your agent state once:
+  #   mkdir -p ~/.sandboxeed
+  #   cp -a ~/.claude ~/.sandboxeed/.claude
+  #   cp -a ~/.claude.json ~/.sandboxeed/.claude.json
+  #   cp -a ~/.codex ~/.sandboxeed/.codex
+  #   cp -a ~/.gemini ~/.sandboxeed/.gemini
+  #   cp -a ~/.config/opencode ~/.sandboxeed/.config/opencode
+  #   cp -a ~/.local/share/opencode ~/.sandboxeed/.local/share/opencode
+  #
+  # This prevents permissive sandbox settings from contaminating your host config.
+  # Re-copy when you want to refresh from the host.
   volumes:
-    - ~/.claude:/home/node/.claude
-    - ~/.codex:/home/node/.codex
-    - ~/.claude.json:/home/node/.claude.json
-    - ~/.config/opencode:/home/node/.config/opencode
-    - ~/.local/share/opencode/:/home/node/.local/share/opencode/
-    - ~/.gemini:/home/node/.gemini
+    - ~/.sandboxeed/.claude:/home/node/.claude
+    - ~/.sandboxeed/.codex:/home/node/.codex
+    - ~/.sandboxeed/.claude.json:/home/node/.claude.json
+    - ~/.sandboxeed/.config/opencode:/home/node/.config/opencode
+    - ~/.sandboxeed/.local/share/opencode:/home/node/.local/share/opencode
+    - ~/.sandboxeed/.gemini:/home/node/.gemini
     - ~/.gitconfig:/home/node/.gitconfig:ro
     - ~/.ssh/ai_agent_key:/home/node/.ssh/id_rsa:ro
   environment:

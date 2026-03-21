@@ -76,20 +76,29 @@ Or use the pre-built binary if available.
 
 ## Quick start
 
-1. Copy an example config for your agent:
+1. Copy your agent state into sandboxeed-managed paths so insecure sandbox config (auto-approve,
+   bypassed permissions) stays separate from your secure host config:
+
+```bash
+mkdir -p ~/.sandboxeed
+cp -a ~/.claude ~/.sandboxeed/.claude
+cp -a ~/.claude.json ~/.sandboxeed/.claude.json
+```
+
+2. Copy an example config for your agent:
 
 ```bash
 cp examples/claude/Dockerfile.sandbox ./Dockerfile.sandbox
 cp examples/claude/sandboxeed.yaml ./sandboxeed.yaml
 ```
 
-2. Build the sandbox image:
+3. Build the sandbox image:
 
 ```bash
 sandboxeed --build
 ```
 
-3. Run your agent:
+4. Run your agent:
 
 ```bash
 sandboxeed claude
@@ -248,6 +257,44 @@ projects.
 For example: mount configurations for AI agents you use, set common environment variables, or whitelist commonly used
 domains.
 
+### Separating sandbox and host config
+
+**Best practice:** mount sandboxeed-managed copies of agent state from `~/.sandboxeed/` instead of
+mounting your real host paths directly.
+
+Sandbox configs are intentionally insecure — approval prompts are disabled, permissions are
+bypassed, and tools run with full access. If you mount your real `~/.claude` or `~/.codex` into the
+sandbox, those permissive settings get written into your host config. The next time you run the
+agent outside the sandbox, it inherits the insecure sandbox settings. Going the other direction, the
+sandbox could also read your host API keys, session history, or inject content (MCP server entries,
+shell hooks, custom slash commands) that gets executed later on the host.
+
+Keeping a separate copy in `~/.sandboxeed/` means sandbox and host configs evolve independently.
+
+Set up once per agent:
+
+```bash
+mkdir -p ~/.sandboxeed
+
+# Claude Code
+cp -a ~/.claude ~/.sandboxeed/.claude
+cp -a ~/.claude.json ~/.sandboxeed/.claude.json
+
+# Codex CLI
+cp -a ~/.codex ~/.sandboxeed/.codex
+
+# Gemini CLI
+cp -a ~/.gemini ~/.sandboxeed/.gemini
+
+# OpenCode
+mkdir -p ~/.sandboxeed/.config ~/.sandboxeed/.local/share
+cp -a ~/.config/opencode ~/.sandboxeed/.config/opencode
+cp -a ~/.local/share/opencode ~/.sandboxeed/.local/share/opencode
+```
+
+Then mount from `~/.sandboxeed/` in your config. Re-copy whenever you want to refresh sandbox state
+from the host (e.g., after changing API keys or updating settings).
+
 User config:
 
 ```yaml
@@ -257,11 +304,9 @@ sandbox:
     dockerfile: ~/.sandboxeed/Dockerfile
   image: localhost/sandboxeed:latest
   volumes:
-    - ~/.claude:/home/node/.claude
-    - ~/.claude.json:/home/node/.claude.json
-    - ~/.sandboxeed/.claude/settings.json:/home/node/.claude/settings.json
-    - ~/.codex:/home/node/.codex
-    - ~/.sandboxeed/.codex/config.toml:/home/node/.codex/config.toml
+    - ~/.sandboxeed/.claude:/home/node/.claude
+    - ~/.sandboxeed/.claude.json:/home/node/.claude.json
+    - ~/.sandboxeed/.codex:/home/node/.codex
     - ~/.gitconfig:/home/node/.gitconfig:ro
   environment:
     - DISABLE_AUTOUPDATER=1
@@ -310,8 +355,9 @@ For a ready-to-use starting point, copy the files for your agent from [`examples
 | [Gemini CLI](examples/gemini/)  | `Dockerfile.sandbox`, `sandboxeed.yaml`                  |
 | [OpenCode](examples/opencode/)  | `Dockerfile.sandbox`, `sandboxeed.yaml`                  |
 
-Copy `.sandboxeed.yaml` to `~/.sandboxeed.yaml` for global defaults, and tool-specific config files
-(like `settings.json` or `config.toml`) to `~/.sandboxeed/` for mounting into the sandbox.
+Copy `.sandboxeed.yaml` to `~/.sandboxeed.yaml` for global defaults. Copy your agent state into
+`~/.sandboxeed/` as described in [Separating sandbox and host config](#separating-sandbox-and-host-config)
+so the sandbox mounts isolated copies instead of your real host paths.
 Per-agent `Dockerfile.sandbox` and `sandboxeed.yaml` go in your project root.
 
 These are project-agnostic starters. You will typically need to add language runtimes, package
@@ -401,12 +447,11 @@ complete security boundary**. Keep the following in mind:
   container can be read or exfiltrated to allowed domains. Mount with `:ro` where possible and avoid
   mounting credentials you don't need. If you mount a Git SSH key, use a dedicated key with the
   narrowest repository or project scope you can enforce instead of a broader personal key.
-  The example `sandboxeed.yaml` files mount agent config directories like `~/.claude`, `~/.codex`,
-  `~/.gemini`, and `~/.config/opencode` without `:ro`. This means a sandboxed agent can **read**
-  those files (exposing API keys and tokens stored in them), **modify** them (corrupting your
-  configuration), or **inject** content that may be executed later on the host (e.g., shell hooks,
-  MCP server entries, or custom slash commands). For stronger isolation, mount a separate,
-  purpose-built config directory instead of your real one, or at minimum mount with `:ro`.
+  The example configs mount from `~/.sandboxeed/` — sandboxeed-managed copies of agent state - rather
+  than your real host paths. This is critical because sandbox configs use permissive auto-approve
+  settings that would be dangerous on the host; mounting your real config directly lets those
+  insecure settings leak back. See
+  [Separating sandbox and host config](#separating-sandbox-and-host-config) for setup instructions.
   You can also run with `--read-only` to force all mounts (including the project directory) to
   read-only mode.
 - **Example configs are intentionally permissive.** The files in `examples/` disable approval

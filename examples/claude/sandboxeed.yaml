@@ -2,9 +2,11 @@ sandbox:
   build:
     dockerfile: Dockerfile.sandbox
   image: sandboxeed-claude-example
+  # Mount sandboxeed-managed copies so insecure sandbox settings don't contaminate your host config.
+  # Set up once: cp -a ~/.claude ~/.sandboxeed/.claude && cp -a ~/.claude.json ~/.sandboxeed/.claude.json
   volumes:
-    - ~/.claude:/home/node/.claude
-    - ~/.claude.json:/home/node/.claude.json
+    - ~/.sandboxeed/.claude:/home/node/.claude
+    - ~/.sandboxeed/.claude.json:/home/node/.claude.json
   environment:
     - DISABLE_AUTOUPDATER=1
   domains:

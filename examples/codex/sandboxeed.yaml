@@ -2,8 +2,10 @@ sandbox:
   build:
     dockerfile: Dockerfile.sandbox
   image: sandboxeed-codex-example
+  # Mount sandboxeed-managed copy so insecure sandbox settings don't contaminate your host config.
+  # Set up once: cp -a ~/.codex ~/.sandboxeed/.codex
   volumes:
-    - ~/.codex:/home/node/.codex
+    - ~/.sandboxeed/.codex:/home/node/.codex
   domains:
     - .github.com
     - .githubusercontent.com

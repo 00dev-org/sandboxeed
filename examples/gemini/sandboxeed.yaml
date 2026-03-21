@@ -2,8 +2,10 @@ sandbox:
   build:
     dockerfile: Dockerfile.sandbox
   image: sandboxeed-gemini-example
+  # Mount sandboxeed-managed copy so insecure sandbox settings don't contaminate your host config.
+  # Set up once: cp -a ~/.gemini ~/.sandboxeed/.gemini
   volumes:
-    - ~/.gemini:/home/node/.gemini
+    - ~/.sandboxeed/.gemini:/home/node/.gemini
   domains:
     - .github.com
     - .githubusercontent.com

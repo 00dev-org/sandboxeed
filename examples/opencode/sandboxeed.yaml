@@ -2,9 +2,13 @@ sandbox:
   build:
     dockerfile: Dockerfile.sandbox
   image: sandboxeed-opencode-example
+  # Mount sandboxeed-managed copies so insecure sandbox settings don't contaminate your host config.
+  # Set up once:
+  #   cp -a ~/.config/opencode ~/.sandboxeed/.config/opencode
+  #   cp -a ~/.local/share/opencode ~/.sandboxeed/.local/share/opencode
   volumes:
-    - ~/.config/opencode:/home/node/.config/opencode
-    - ~/.local/share/opencode/:/home/node/.local/share/opencode/
+    - ~/.sandboxeed/.config/opencode:/home/node/.config/opencode
+    - ~/.sandboxeed/.local/share/opencode:/home/node/.local/share/opencode
   domains:
     - .github.com
     - .githubusercontent.com
