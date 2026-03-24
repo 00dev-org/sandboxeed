@@ -236,7 +236,7 @@ func TestIntegrationBuildUsesUserImageWithoutProjectConfig(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(homeDir, ".sandboxeed"), 0o755); err != nil {
 		t.Fatalf("MkdirAll(.sandboxeed) error = %v", err)
 	}
-	if err := os.WriteFile(filepath.Join(homeDir, userConfigFile), []byte(strings.Join([]string{
+	if err := os.WriteFile(filepath.Join(homeDir, userConfigDir, userConfigFile), []byte(strings.Join([]string{
 		"sandbox:",
 		"  build:",
 		"    dockerfile: ~/.sandboxeed/Dockerfile",
@@ -281,7 +281,10 @@ func TestIntegrationInspectReportsMergedConfig(t *testing.T) {
 	bin := buildSandboxeedBinary(t)
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
-	if err := os.WriteFile(filepath.Join(homeDir, userConfigFile), []byte("sandbox:\n  memory: 256m\n  cpus: \"1\"\n"), 0o600); err != nil {
+	if err := os.MkdirAll(filepath.Join(homeDir, userConfigDir), 0o755); err != nil {
+		t.Fatalf("MkdirAll(user config dir) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(homeDir, userConfigDir, userConfigFile), []byte("sandbox:\n  memory: 256m\n  cpus: \"1\"\n"), 0o600); err != nil {
 		t.Fatalf("WriteFile(user config) error = %v", err)
 	}
 	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n  pids: 64\n")

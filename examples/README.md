@@ -10,7 +10,7 @@ All of these example configs are highly insecure outside sandboxed or otherwise 
 
 ### `.sandboxeed.yaml`
 
-A global [user config](../README.md#user-config) file that should be saved to `~/.sandboxeed.yaml`. It pre-configures volumes, environment variables, and allowed domains shared across all tools (Claude Code, Codex, Gemini, OpenCode). Use this alongside the tool-specific config files below (`settings.json`, `config.toml`, etc.), which should be saved under `~/.sandboxeed/` and mounted into the sandbox via the user config (e.g., `~/.sandboxeed/.claude/settings.json`, `~/.sandboxeed/.codex/config.toml`).
+A global [user config](../README.md#user-config) file that should be saved to `~/.sandboxeed/sandboxeed.yaml`. It pre-configures volumes, environment variables, and allowed domains shared across all tools (Claude Code, Codex, Gemini, OpenCode). Use this alongside the tool-specific config files below (`settings.json`, `config.toml`, etc.), which should be saved under `~/.sandboxeed/` and mounted into the sandbox via the user config (e.g., `~/.sandboxeed/.claude/settings.json`, `~/.sandboxeed/.codex/config.toml`).
 
 ### `claude/`
 
@@ -49,7 +49,8 @@ OpenCode examples:
 Copy `.sandboxeed.yaml` to your home directory as the global user config, along with any tool-specific config files:
 
 ```bash
-cp examples/.sandboxeed.yaml ~/.sandboxeed.yaml
+mkdir -p ~/.sandboxeed
+cp examples/.sandboxeed.yaml ~/.sandboxeed/sandboxeed.yaml
 
 # Claude Code config
 mkdir -p ~/.sandboxeed/.claude

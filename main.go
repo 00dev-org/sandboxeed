@@ -51,6 +51,7 @@ Usage:
   sandboxeed --help
   sandboxeed --version
   sandboxeed --inspect
+  sandboxeed --config
   sandboxeed --cleanup
 
 Flags:
@@ -62,6 +63,7 @@ Flags:
   --help        Show this help text.
   --version     Print the app version.
   --inspect     Print the effective sandbox configuration.
+  --config      Open ~/.sandboxeed/sandboxeed.yaml in the system editor.
   --cleanup     List and remove sandboxeed containers, networks, and volumes (with confirmation).
 `)
 }
@@ -73,6 +75,7 @@ const (
 	cliModeHelp    cliMode = "help"
 	cliModeVersion cliMode = "version"
 	cliModeInspect cliMode = "inspect"
+	cliModeConfig  cliMode = "config"
 	cliModeCleanup cliMode = "cleanup"
 )
 
@@ -102,6 +105,7 @@ func parseCLIArgs(argv []string) (cliOptions, error) {
 	fs.BoolVar(help, "h", false, "")
 	version := fs.Bool("version", false, "")
 	inspect := fs.Bool("inspect", false, "")
+	config := fs.Bool("config", false, "")
 	cleanup := fs.Bool("cleanup", false, "")
 
 	if err := fs.Parse(argv); err != nil {
@@ -115,6 +119,8 @@ func parseCLIArgs(argv []string) (cliOptions, error) {
 		opts.mode = cliModeVersion
 	case *inspect:
 		opts.mode = cliModeInspect
+	case *config:
+		opts.mode = cliModeConfig
 	case *cleanup:
 		opts.mode = cliModeCleanup
 	}
@@ -159,6 +165,9 @@ func run() int {
 	}
 	if opts.mode == cliModeCleanup {
 		return runCleanup()
+	}
+	if opts.mode == cliModeConfig {
+		return runConfig()
 	}
 	if opts.mode == cliModeInspect {
 		return runInspect(opts.noDocker, opts.readOnly, opts.offline)
@@ -332,6 +341,69 @@ func runInspect(noDocker, readOnly, offline bool) int {
 	}
 	stdoutf("%s", data)
 	return 0
+}
+
+func runConfig() int {
+	path, err := userConfigPath()
+	if err != nil {
+		stderrf("failed to resolve home directory: %v\n", err)
+		return 1
+	}
+
+	if err := ensureUserConfigFile(path); err != nil {
+		stderrf("failed to prepare %s: %v\n", path, err)
+		return 1
+	}
+
+	cmd, err := configEditorCommand(path)
+	if err != nil {
+		stderrf("%v\n", err)
+		return 1
+	}
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		stderrf("failed to open %s: %v\n", path, err)
+		return 1
+	}
+	return 0
+}
+
+func ensureUserConfigFile(path string) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	file, err := os.OpenFile(path, os.O_CREATE, 0o600)
+	if err != nil {
+		return err
+	}
+	return file.Close()
+}
+
+func configEditorCommand(path string) (*exec.Cmd, error) {
+	editorArgs, err := configEditorArgs(path)
+	if err != nil {
+		return nil, err
+	}
+	return exec.Command(editorArgs[0], editorArgs[1:]...), nil
+}
+
+func configEditorArgs(path string) ([]string, error) {
+	editor := strings.TrimSpace(os.Getenv("VISUAL"))
+	if editor == "" {
+		editor = strings.TrimSpace(os.Getenv("EDITOR"))
+	}
+	if editor == "" {
+		editor = "vi"
+	}
+
+	args := strings.Fields(editor)
+	if len(args) == 0 {
+		return nil, fmt.Errorf("no editor configured")
+	}
+	args = append(args, path)
+	return args, nil
 }
 
 func applyCLIOverrides(cfg *Config, noDocker, offline bool) {

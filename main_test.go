@@ -487,7 +487,7 @@ func TestParseCLIArgsParsesSandboxFlagsBeforeCommand(t *testing.T) {
 }
 
 func TestParseCLIArgsTreatsBuiltInNamesAsSandboxCommands(t *testing.T) {
-	for _, name := range []string{"cleanup", "inspect", "version", "help"} {
+	for _, name := range []string{"cleanup", "inspect", "version", "help", "config"} {
 		t.Run(name, func(t *testing.T) {
 			got, err := parseCLIArgs([]string{name, "arg"})
 			if err != nil {
@@ -516,6 +516,7 @@ func TestParseCLIArgsParsesBuiltInsWithDoubleDash(t *testing.T) {
 		{name: "help-short", argv: []string{"-h"}, mode: cliModeHelp},
 		{name: "version", argv: []string{"--version"}, mode: cliModeVersion},
 		{name: "inspect", argv: []string{"--inspect"}, mode: cliModeInspect},
+		{name: "config", argv: []string{"--config"}, mode: cliModeConfig},
 		{name: "cleanup", argv: []string{"--cleanup"}, mode: cliModeCleanup},
 	}
 
@@ -600,6 +601,38 @@ func TestParseCLIArgsKeepsAllTokensAfterBuiltInWithBuiltIn(t *testing.T) {
 	}
 	if want := []string{"cleanup"}; !equalStrings(got.extraArgs, want) {
 		t.Fatalf("parseCLIArgs() extraArgs = %v, want %v", got.extraArgs, want)
+	}
+}
+
+func TestConfigEditorArgsPrefersVisualThenEditorThenVi(t *testing.T) {
+	path := "/tmp/.sandboxeed/sandboxeed.yaml"
+
+	t.Setenv("VISUAL", "code --wait")
+	t.Setenv("EDITOR", "nano")
+	got, err := configEditorArgs(path)
+	if err != nil {
+		t.Fatalf("configEditorArgs() error = %v", err)
+	}
+	if want := []string{"code", "--wait", path}; !equalStrings(got, want) {
+		t.Fatalf("configEditorArgs() = %v, want %v", got, want)
+	}
+
+	t.Setenv("VISUAL", "")
+	got, err = configEditorArgs(path)
+	if err != nil {
+		t.Fatalf("configEditorArgs() error = %v", err)
+	}
+	if want := []string{"nano", path}; !equalStrings(got, want) {
+		t.Fatalf("configEditorArgs() = %v, want %v", got, want)
+	}
+
+	t.Setenv("EDITOR", "")
+	got, err = configEditorArgs(path)
+	if err != nil {
+		t.Fatalf("configEditorArgs() error = %v", err)
+	}
+	if want := []string{"vi", path}; !equalStrings(got, want) {
+		t.Fatalf("configEditorArgs() = %v, want %v", got, want)
 	}
 }
 
@@ -963,7 +996,7 @@ func withConfigDirs(t *testing.T, userConfig string, fn func(projectDir, homeDir
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
 	if userConfig != "" {
-		writeFile(t, filepath.Join(homeDir, userConfigFile), userConfig)
+		writeFile(t, filepath.Join(homeDir, userConfigDir, userConfigFile), userConfig)
 	}
 
 	withWorkingDir(t, projectDir, func() {
@@ -974,6 +1007,9 @@ func withConfigDirs(t *testing.T, userConfig string, fn func(projectDir, homeDir
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q) error = %v", filepath.Dir(path), err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("WriteFile(%q) error = %v", path, err)
 	}

@@ -148,6 +148,7 @@ sandboxeed --cleanup
 - `--help` - show the usage summary (`-h` also works)
 - `--version` - print the app version
 - `--inspect` - print the effective merged sandbox config without starting containers
+- `--config` - open `~/.sandboxeed/sandboxeed.yaml` in your editor, creating the directory and file if needed
 - `--cleanup` - list sandboxeed-managed containers, networks, and volumes and remove them after
   confirmation; images are not removed
 
@@ -183,14 +184,14 @@ won't block the next one and multiple sandboxes can run concurrently from the sa
 Configuration is loaded in this order:
 
 1. Built-in defaults
-2. Optional user config at `~/.sandboxeed.yaml`
+2. Optional user config at `~/.sandboxeed/sandboxeed.yaml`
 3. Optional project config at `./sandboxeed.yaml`
 
 Later layers override earlier ones. Environment variables are merged by variable name, volume mounts
 are merged by container destination path, and domains are deduplicated.
 
 For reusable user-managed sandbox images, `sandbox.image` and `sandbox.build.dockerfile` can live in
-`~/.sandboxeed.yaml`. A project config can either inherit that pair unchanged, override both with its own
+`~/.sandboxeed/sandboxeed.yaml`. A project config can either inherit that pair unchanged, override both with its own
 build settings, or override just `image` to use a different prebuilt image.
 
 The current directory is always mounted at `/home/node/<host-cwd-name>` inside the sandbox. Any volumes you
@@ -235,7 +236,7 @@ sandbox:
 
 ### User config
 
-Keep personal defaults in `~/.sandboxeed.yaml`. Only these fields are supported there:
+Keep personal defaults in `~/.sandboxeed/sandboxeed.yaml`. Only these fields are supported there:
 
 - `sandbox.build.dockerfile`
 - `sandbox.image`
@@ -298,7 +299,7 @@ from the host (e.g., after changing API keys or updating settings).
 User config:
 
 ```yaml
-# ~/.sandboxeed.yaml
+# ~/.sandboxeed/sandboxeed.yaml
 sandbox:
   build:
     dockerfile: ~/.sandboxeed/Dockerfile
@@ -346,7 +347,7 @@ For a ready-to-use starting point, copy the files for your agent from [`examples
 
 | File                                            | Scope  | Description                                                        |
 |-------------------------------------------------|--------|--------------------------------------------------------------------|
-| [`.sandboxeed.yaml`](examples/.sandboxeed.yaml) | Global | User config (`~/.sandboxeed.yaml`) with shared volumes and domains |
+| [`.sandboxeed.yaml`](examples/.sandboxeed.yaml) | Global | User config (`~/.sandboxeed/sandboxeed.yaml`) with shared volumes and domains |
 
 | Agent                           | Project files                                            |
 |---------------------------------|----------------------------------------------------------|
@@ -355,7 +356,7 @@ For a ready-to-use starting point, copy the files for your agent from [`examples
 | [Gemini CLI](examples/gemini/)  | `Dockerfile.sandbox`, `sandboxeed.yaml`                  |
 | [OpenCode](examples/opencode/)  | `Dockerfile.sandbox`, `sandboxeed.yaml`                  |
 
-Copy `.sandboxeed.yaml` to `~/.sandboxeed.yaml` for global defaults. Copy your agent state into
+Copy `.sandboxeed.yaml` to `~/.sandboxeed/sandboxeed.yaml` for global defaults. Copy your agent state into
 `~/.sandboxeed/` as described in [Separating sandbox and host config](#separating-sandbox-and-host-config)
 so the sandbox mounts isolated copies instead of your real host paths.
 Per-agent `Dockerfile.sandbox` and `sandboxeed.yaml` go in your project root.

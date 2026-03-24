@@ -14,7 +14,8 @@ import (
 )
 
 const configFile = "sandboxeed.yaml"
-const userConfigFile = ".sandboxeed.yaml"
+const userConfigDir = ".sandboxeed"
+const userConfigFile = "sandboxeed.yaml"
 
 var memoryPattern = regexp.MustCompile(`(?i)^\d+(\.\d+)?([kmgtp]?b|[kmgtp])?$`)
 
@@ -61,11 +62,10 @@ func defaultConfig() *Config {
 func loadConfig() (*Config, error) {
 	cfg := defaultConfig()
 
-	homeDir, err := os.UserHomeDir()
+	userPath, err := userConfigPath()
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve home directory: %w", err)
 	}
-	userPath := filepath.Join(homeDir, userConfigFile)
 	userCfg, found, err := loadUserConfigFile(userPath)
 	if err != nil {
 		return nil, err
@@ -121,6 +121,14 @@ func loadConfig() (*Config, error) {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+func userConfigPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, userConfigDir, userConfigFile), nil
 }
 
 func loadProjectConfigFile(path string) (*Config, bool, error) {
