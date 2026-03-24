@@ -72,7 +72,14 @@ Podman-specific forced container removal path during shutdown to avoid slow prox
 go build -o sandboxeed .
 ```
 
-Or use the pre-built binary if available.
+Or use a pre-built release binary. If you want `sandboxeed --self-update` to work without `sudo`,
+install it in a user-writable directory on your `PATH`, such as `~/.local/bin`:
+
+```bash
+mkdir -p ~/.local/bin
+cp ./sandboxeed ~/.local/bin/sandboxeed
+chmod 755 ~/.local/bin/sandboxeed
+```
 
 ## Quick start
 
@@ -149,6 +156,7 @@ sandboxeed --cleanup
 - `--version` - print the app version
 - `--inspect` - print the effective merged sandbox config without starting containers
 - `--config` - open `~/.sandboxeed/sandboxeed.yaml` in your editor, creating the directory and file if needed
+- `--self-update` - replace the current binary with the latest GitHub release
 - `--cleanup` - list sandboxeed-managed containers, networks, and volumes and remove them after
   confirmation; images are not removed
 
@@ -156,6 +164,12 @@ Sandboxeed options are only parsed before the sandboxed command starts. The firs
 always the sandboxed command, and every token after that belongs to the sandboxed command. Use `--`
 to force the next token to be treated as the sandboxed command when it begins with `-` or `--`. If
 no command is given, an interactive `bash` shell opens.
+
+### Updates
+
+On startup, sandboxeed checks GitHub Releases and prints a notice if a newer version is available.
+Use `sandboxeed --self-update` to replace the current binary with the latest release.
+Set `SANDBOXEED_DISABLE_UPDATE_CHECK=1` to disable the startup check.
 
 ### Auto-build
 
