@@ -53,6 +53,7 @@ Usage:
   sandboxeed --inspect
   sandboxeed --config
   sandboxeed --cleanup
+  sandboxeed --self-update
 
 Flags:
   --build       Build the sandbox image; if a command is provided, run it afterward.
@@ -65,18 +66,20 @@ Flags:
   --inspect     Print the effective sandbox configuration.
   --config      Open ~/.sandboxeed/sandboxeed.yaml in the system editor.
   --cleanup     List and remove sandboxeed containers, networks, and volumes (with confirmation).
+  --self-update   Download and replace this binary with the latest release.
 `)
 }
 
 type cliMode string
 
 const (
-	cliModeSandbox cliMode = "sandbox"
-	cliModeHelp    cliMode = "help"
-	cliModeVersion cliMode = "version"
-	cliModeInspect cliMode = "inspect"
-	cliModeConfig  cliMode = "config"
-	cliModeCleanup cliMode = "cleanup"
+	cliModeSandbox    cliMode = "sandbox"
+	cliModeHelp       cliMode = "help"
+	cliModeVersion    cliMode = "version"
+	cliModeInspect    cliMode = "inspect"
+	cliModeConfig     cliMode = "config"
+	cliModeCleanup    cliMode = "cleanup"
+	cliModeSelfUpdate cliMode = "self-update"
 )
 
 type cliOptions struct {
@@ -107,6 +110,7 @@ func parseCLIArgs(argv []string) (cliOptions, error) {
 	inspect := fs.Bool("inspect", false, "")
 	config := fs.Bool("config", false, "")
 	cleanup := fs.Bool("cleanup", false, "")
+	selfUpdate := fs.Bool("self-update", false, "")
 
 	if err := fs.Parse(argv); err != nil {
 		return cliOptions{}, err
@@ -123,6 +127,8 @@ func parseCLIArgs(argv []string) (cliOptions, error) {
 		opts.mode = cliModeConfig
 	case *cleanup:
 		opts.mode = cliModeCleanup
+	case *selfUpdate:
+		opts.mode = cliModeSelfUpdate
 	}
 
 	rest := fs.Args()
@@ -172,6 +178,11 @@ func run() int {
 	if opts.mode == cliModeInspect {
 		return runInspect(opts.noDocker, opts.readOnly, opts.offline)
 	}
+	if opts.mode == cliModeSelfUpdate {
+		return runSelfUpdate()
+	}
+
+	maybeNotifyUpdate()
 
 	cfg, err := loadConfig()
 	if err != nil {
