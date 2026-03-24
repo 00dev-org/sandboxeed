@@ -27,9 +27,10 @@ func TestIntegrationRunSandboxCommand(t *testing.T) {
 
 	bin := buildSandboxeedBinary(t)
 	projectName := networkProjectName(projectDir)
+	projectMountPath := defaultProjectMountPath(projectDir)
 
 	// Run through `script` so the app's `docker run -it` gets a tty in the test process.
-	command := fmt.Sprintf("%q sh -lc %q", bin, "pwd; test -f /workspace/proof.txt; echo CORE_OK")
+	command := fmt.Sprintf("%q sh -lc %q", bin, fmt.Sprintf("pwd; test -f %s/proof.txt; echo CORE_OK", projectMountPath))
 	cmd := exec.Command("script", "-qec", command, "/dev/null")
 	cmd.Dir = projectDir
 
@@ -43,7 +44,7 @@ func TestIntegrationRunSandboxCommand(t *testing.T) {
 	}
 
 	out := stdout.String()
-	if !strings.Contains(out, "/workspace") {
+	if !strings.Contains(out, projectMountPath) {
 		t.Fatalf("sandbox output missing working directory:\n%s", out)
 	}
 	if !strings.Contains(out, "CORE_OK") {
@@ -378,7 +379,7 @@ func TestIntegrationReadOnlyBlocksWrites(t *testing.T) {
 	projectDir := workspaceTempDir(t)
 	writeSandboxConfig(t, projectDir, "sandbox:\n  image: busybox:1.36\n")
 
-	script := "if touch /workspace/new.txt 2>/dev/null; then echo WRITE_ALLOWED; else echo READONLY_OK; fi"
+	script := fmt.Sprintf("if touch %s/new.txt 2>/dev/null; then echo WRITE_ALLOWED; else echo READONLY_OK; fi", defaultProjectMountPath(projectDir))
 	stdout, stderr, err := runSandboxeedScripted(t, projectDir, fmt.Sprintf("--read-only sh -lc %q", script))
 	if err != nil {
 		t.Fatalf("sandboxeed --read-only failed: %v\nstdout:\n%s\nstderr:\n%s", err, stdout, stderr)

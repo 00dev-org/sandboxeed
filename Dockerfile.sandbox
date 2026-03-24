@@ -26,11 +26,11 @@ RUN curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go
 RUN mkdir -p /usr/local/share/npm-global && \
     chown -R node:node /usr/local/share
 
-# Create workspace and config directories with proper permissions
-RUN mkdir -p /workspace /home/node/.claude /home/node/.local/bin /home/node/.local/share && \
-    chown -R node:node /workspace /home/node/.claude /home/node/.local
+# Create home and config directories with proper permissions
+RUN mkdir -p /home/node/.claude /home/node/.local/bin /home/node/.local/share && \
+    chown -R node:node /home/node/.claude /home/node/.local
 
-WORKDIR /workspace
+WORKDIR /home/node
 
 # Switch to non-root user
 USER node

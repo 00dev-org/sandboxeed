@@ -9,10 +9,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     corkscrew \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /workspace /home/node/.claude /home/node/.local/bin /home/node/.local/share && \
-    chown -R node:node /workspace /home/node/.claude /home/node/.local
+RUN mkdir -p /home/node/.claude /home/node/.local/bin /home/node/.local/share && \
+    chown -R node:node /home/node/.claude /home/node/.local
 
-WORKDIR /workspace
+WORKDIR /home/node
 
 USER node
 

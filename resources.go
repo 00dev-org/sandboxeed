@@ -34,6 +34,18 @@ func defaultSandboxImage(projectDir string) string {
 	return sanitizeProjectName(filepath.Base(projectDir)) + "-sandboxeed"
 }
 
+func defaultProjectMountName(projectDir string) string {
+	name := strings.TrimSpace(filepath.Base(projectDir))
+	if name == "" || name == "." || name == string(filepath.Separator) {
+		return "workspace"
+	}
+	return name
+}
+
+func defaultProjectMountPath(projectDir string) string {
+	return filepath.ToSlash(filepath.Join("/home/node", defaultProjectMountName(projectDir)))
+}
+
 func expandVolumeSpec(projectDir, spec string) string {
 	host, rest, ok := strings.Cut(spec, ":")
 	if !ok {

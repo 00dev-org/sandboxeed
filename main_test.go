@@ -800,6 +800,19 @@ func TestResolveSandboxConfigIncludesLimits(t *testing.T) {
 	}
 }
 
+func TestResolveSandboxConfigUsesProjectNamedMountByDefault(t *testing.T) {
+	cfg := &Config{}
+	cfg.Sandbox.Image = "alpine:3.22"
+
+	resolved := resolveSandboxConfig(newRunResources("/tmp/My Project"), cfg, false, false, false, "", "")
+	if got, want := resolved.WorkingDir, "/home/node/My Project"; got != want {
+		t.Fatalf("resolveSandboxConfig() working dir = %q, want %q", got, want)
+	}
+	if got, want := resolved.Volumes[0], "/tmp/My Project:/home/node/My Project"; got != want {
+		t.Fatalf("resolveSandboxConfig() first volume = %q, want %q", got, want)
+	}
+}
+
 func TestResolveSandboxConfigOfflineOmitsProxyEnv(t *testing.T) {
 	cfg := &Config{}
 	cfg.Sandbox.Image = "alpine:3.22"

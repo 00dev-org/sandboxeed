@@ -7,7 +7,8 @@ sandbox_mode = "danger-full-access"
 [shell_environment_policy]
 include_only = ["PATH", "HOME", "HTTP_PROXY", "HTTPS_PROXY", "DOCKER_HOST"]
 
-[projects."/workspace"]
+# Replace with the in-container path sandboxeed uses for your project directory.
+[projects."/home/node/your-project"]
 trust_level = "trusted"
 
 [notice]

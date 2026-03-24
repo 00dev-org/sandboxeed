@@ -31,7 +31,7 @@ It addresses common issues across popular agent tools:
   |  |  |  (claude / codex /          |   |  [+] api.openai.com         |  | |
   |  |  |   gemini / opencode / ...)  |   |  [-] everything else -> 403 |  | |
   |  |  |                             |   +---------------+-------------+  | |
-  |  |  |  /workspace <- ./           |                   |                | |
+  |  |  |  /home/node/<project> <- ./ |                   |                | |
   |  |  |  (host dir, always mounted) |                   | egress network | |
   |  |  +-----------------------------+                   |                | |
   |  |                                                    |                | |
@@ -193,7 +193,7 @@ For reusable user-managed sandbox images, `sandbox.image` and `sandbox.build.doc
 `~/.sandboxeed.yaml`. A project config can either inherit that pair unchanged, override both with its own
 build settings, or override just `image` to use a different prebuilt image.
 
-The current directory is always mounted at `/workspace` inside the sandbox. Any volumes you
+The current directory is always mounted at `/home/node/<host-cwd-name>` inside the sandbox. Any volumes you
 configure are merged on top of that default.
 
 Place a `sandboxeed.yaml` in your project directory:
@@ -207,7 +207,7 @@ sandbox:
     - ~/.gitconfig:/root/.gitconfig:ro
   environment:
     - MY_VAR=value
-  working_dir: /workspace            # default: /workspace
+  working_dir: /home/node/<host-cwd-name> # default: /home/node/<host-cwd-name>
   docker: true                       # enable Docker-in-Docker support
   memory: 2g                         # sandbox container memory limit
   cpus: "2"                          # sandbox container CPU limit
@@ -224,9 +224,9 @@ sandbox:
 |--------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `build.dockerfile` | Path to the Dockerfile. Used by `--build` and for automatic builds when the configured image tag is not found locally. Defaults to `Dockerfile` when `--build` is used without an explicit path. |
 | `image`            | Required when `sandboxeed.yaml` is present. The Docker image to run (and to tag when using `--build`).                                                                                           |
-| `volumes`          | Extra volume mounts added after the default `.:/workspace` mount. Supports `~`, `./`, and `../` path prefixes. When multiple entries target the same container path, the last config layer wins. |
+| `volumes`          | Extra volume mounts added after the default `.:/home/node/<host-cwd-name>` mount. Supports `~`, `./`, and `../` path prefixes. When multiple entries target the same container path, the last config layer wins. |
 | `environment`      | Extra environment variables added after the proxy defaults (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`). When the same variable appears more than once, the last config layer wins.                 |
-| `working_dir`      | Working directory inside the container. Default: `/workspace`.                                                                                                                                   |
+| `working_dir`      | Working directory inside the container. Default: `/home/node/<host-cwd-name>`.                                                                                                                  |
 | `docker`           | Set to `true` to start a Docker-in-Docker sidecar (see [Docker-in-Docker](#docker-in-docker)).                                                                                                   |
 | `memory`           | Memory limit for the sandbox container, passed through to Docker as `--memory`. Supported in both project and user config.                                                                       |
 | `cpus`             | CPU limit for the sandbox container, passed through to Docker as `--cpus`. Supported in both project and user config.                                                                            |
@@ -367,7 +367,7 @@ managers, SDKs, or extra allowed domains for your actual project.
 
 If no `sandboxeed.yaml` is found, sandboxeed runs a `bash:latest` container with:
 
-- Current directory mounted at `/workspace`
+- Current directory mounted at `/home/node/<host-cwd-name>`
 - Proxy environment variables set (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`)
 - No outbound internet access (all traffic blocked by the proxy)
 
@@ -382,7 +382,7 @@ set these up:
 | GitHub host keys  | `/etc/ssh/ssh_known_hosts`                 | Only when `github.com` or `.github.com` is in `domains`. Fetched from the GitHub API at startup; `StrictHostKeyChecking yes`                              |
 | Proxy env vars    | `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`    | Set for every run                                                                                                                                         |
 | Docker socket     | `DOCKER_HOST=unix:///var/sock/podman.sock` | Only when `docker: true`; shared via a volume from the Podman-in-Docker sidecar                                                                           |
-| Project mount     | `.:/workspace`                             | Current directory, always mounted                                                                                                                         |
+| Project mount     | `.:/home/node/<host-cwd-name>`             | Current directory, always mounted                                                                                                                         |
 
 **What your Dockerfile must provide:**
 
@@ -393,7 +393,7 @@ set these up:
 
 **Recommended patterns:**
 
-- Create `/workspace` and `chown` it to the runtime user so the default volume mount is writable.
+- Ensure `/home/node` exists and is writable by the runtime user so the default project mount can be used directly.
 - Install your tools and runtimes as root, then switch to a non-root user with `USER` before the
   `CMD`. The injected files at `/etc/ssh/` only need to be readable, so no root access is required
   at runtime.

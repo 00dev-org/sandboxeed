@@ -6,14 +6,11 @@ import (
 	"strings"
 )
 
-var defaultVolumes = []string{".:/workspace"}
 var defaultEnvironment = []string{
 	"HTTP_PROXY=http://proxy:3128",
 	"HTTPS_PROXY=http://proxy:3128",
 	"NO_PROXY=localhost,127.0.0.1",
 }
-
-const defaultWorkingDir = "/workspace"
 
 type ResolvedSandboxConfig struct {
 	Image       string   `yaml:"image"`
@@ -29,12 +26,13 @@ type ResolvedSandboxConfig struct {
 }
 
 func resolveSandboxConfig(resources *runResources, cfg *Config, built, readOnly, offline bool, sshConfigPath, sshKnownHostsPath string) ResolvedSandboxConfig {
-	volumes := make([]string, 0, 2+len(defaultVolumes)+len(cfg.Sandbox.Volumes))
+	defaultMountPath := defaultProjectMountPath(resources.projectDir)
+	volumes := make([]string, 0, 3+len(cfg.Sandbox.Volumes))
 	if sshConfigPath != "" {
 		volumes = append(volumes, sshConfigPath+":/etc/ssh/ssh_config:ro")
 		volumes = append(volumes, sshKnownHostsPath+":/etc/ssh/ssh_known_hosts:ro")
 	}
-	volumes = append(volumes, defaultVolumes...)
+	volumes = append(volumes, ".:"+defaultMountPath)
 	if cfg.Sandbox.Docker && !offline {
 		volumes = append(volumes, resources.dindSocketVolume+":/var/sock")
 	}
@@ -53,7 +51,7 @@ func resolveSandboxConfig(resources *runResources, cfg *Config, built, readOnly,
 
 	workingDir := cfg.Sandbox.WorkingDir
 	if workingDir == "" {
-		workingDir = defaultWorkingDir
+		workingDir = defaultMountPath
 	}
 
 	for i, v := range volumes {

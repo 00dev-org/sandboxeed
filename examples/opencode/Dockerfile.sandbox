@@ -8,10 +8,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     corkscrew \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
-RUN mkdir -p /workspace /home/node/.config/opencode /usr/local/share/npm-global && \
-    chown -R node:node /workspace /home/node/.config /usr/local/share
+RUN mkdir -p /home/node/.config/opencode /usr/local/share/npm-global && \
+    chown -R node:node /home/node/.config /usr/local/share
 
-WORKDIR /workspace
+WORKDIR /home/node
 
 USER node
 
