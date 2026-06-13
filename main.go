@@ -47,7 +47,7 @@ func printHelp() {
 	fmt.Printf(`sandboxeed
 
 Usage:
-  sandboxeed [--build] [--no-docker] [--read-only] [--offline] [--unsafe] [command] [args...]
+  sandboxeed [--build] [--user-image] [--no-docker] [--read-only] [--offline] [--unsafe] [command] [args...]
   sandboxeed --help
   sandboxeed --version
   sandboxeed --inspect
@@ -57,6 +57,7 @@ Usage:
 
 Flags:
   --build       Build the sandbox image; if a command is provided, run it afterward.
+  --user-image  Use the image from ~/.sandboxeed/sandboxeed.yaml instead of the project image.
   --no-docker   Skip Docker-in-Docker even if docker: true is set in the config.
   --read-only   Mount all volumes as read-only inside the sandbox.
   --offline     Force no outbound network for this run and skip proxy startup.
@@ -85,6 +86,7 @@ const (
 type cliOptions struct {
 	mode      cliMode
 	build     bool
+	userImage bool
 	noDocker  bool
 	readOnly  bool
 	offline   bool
@@ -99,6 +101,7 @@ func parseCLIArgs(argv []string) (cliOptions, error) {
 	fs := flag.NewFlagSet("sandboxeed", flag.ContinueOnError)
 	fs.SetOutput(io.Discard)
 	fs.BoolVar(&opts.build, "build", false, "")
+	fs.BoolVar(&opts.userImage, "user-image", false, "")
 	fs.BoolVar(&opts.noDocker, "no-docker", false, "")
 	fs.BoolVar(&opts.readOnly, "read-only", false, "")
 	fs.BoolVar(&opts.offline, "offline", false, "")
@@ -176,7 +179,7 @@ func run() int {
 		return runConfig()
 	}
 	if opts.mode == cliModeInspect {
-		return runInspect(opts.noDocker, opts.readOnly, opts.offline)
+		return runInspect(opts.noDocker, opts.readOnly, opts.offline, opts.userImage)
 	}
 	if opts.mode == cliModeSelfUpdate {
 		return runSelfUpdate()
@@ -184,7 +187,7 @@ func run() int {
 
 	maybeNotifyUpdate()
 
-	cfg, err := loadConfig()
+	cfg, err := loadConfigWithOptions(configLoadOptions{UserImage: opts.userImage})
 	if err != nil {
 		stderrf("failed to load config: %v\n", err)
 		return 1
@@ -328,8 +331,8 @@ func run() int {
 	return 0
 }
 
-func runInspect(noDocker, readOnly, offline bool) int {
-	cfg, err := loadConfig()
+func runInspect(noDocker, readOnly, offline, userImage bool) int {
+	cfg, err := loadConfigWithOptions(configLoadOptions{UserImage: userImage})
 	if err != nil {
 		stderrf("failed to load config: %v\n", err)
 		return 1

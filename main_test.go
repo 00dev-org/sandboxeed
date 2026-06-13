@@ -150,6 +150,91 @@ func TestLoadConfigMergesUserAndProjectConfig(t *testing.T) {
 	})
 }
 
+func TestLoadConfigWithUserImageKeepsProjectSettings(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  build:",
+		"    dockerfile: ~/.sandboxeed/Dockerfile",
+		"  image: sandboxeed-user:latest",
+		"  volumes:",
+		"    - ~/.npmrc:/home/node/.npmrc:ro",
+		"  environment:",
+		"    - FOO=user",
+		"  domains:",
+		"    - user.example.com",
+		"  memory: 256m",
+		"  cpus: \"1\"",
+		"  pids: 64",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  build:",
+			"    dockerfile: Dockerfile.sandbox",
+			"  image: sandboxeed-project:latest",
+			"  working_dir: /app",
+			"  docker: true",
+			"  volumes:",
+			"    - ./cache:/cache",
+			"  environment:",
+			"    - BAR=project",
+			"  domains:",
+			"    - project.example.com",
+			"  memory: 512m",
+			"  cpus: \"2.5\"",
+			"  pids: 256",
+			"",
+		}, "\n"))
+
+		cfg, err := loadConfigWithOptions(configLoadOptions{UserImage: true})
+		if err != nil {
+			t.Fatalf("loadConfigWithOptions() error = %v", err)
+		}
+
+		if cfg.Sandbox.Image != "sandboxeed-user:latest" || cfg.Sandbox.Build.Dockerfile != "~/.sandboxeed/Dockerfile" {
+			t.Fatalf("loadConfigWithOptions() build/image = (%q, %q), want user values", cfg.Sandbox.Build.Dockerfile, cfg.Sandbox.Image)
+		}
+		if cfg.Sandbox.WorkingDir != "/app" || !cfg.Sandbox.Docker {
+			t.Fatalf("loadConfigWithOptions() working_dir/docker = (%q, %v), want project values", cfg.Sandbox.WorkingDir, cfg.Sandbox.Docker)
+		}
+		if got, want := cfg.Sandbox.Volumes, []string{"~/.npmrc:/home/node/.npmrc:ro", "./cache:/cache"}; !equalStrings(got, want) {
+			t.Fatalf("loadConfigWithOptions() volumes = %v, want %v", got, want)
+		}
+		if got, want := cfg.Sandbox.Environment, []string{"FOO=user", "BAR=project"}; !equalStrings(got, want) {
+			t.Fatalf("loadConfigWithOptions() environment = %v, want %v", got, want)
+		}
+		if got, want := cfg.Sandbox.Domains, []string{"user.example.com", "project.example.com"}; !equalStrings(got, want) {
+			t.Fatalf("loadConfigWithOptions() domains = %v, want %v", got, want)
+		}
+		if cfg.Sandbox.Memory != "512m" || cfg.Sandbox.CPUs != "2.5" || cfg.Sandbox.Pids != 256 {
+			t.Fatalf("loadConfigWithOptions() limits = (%q, %q, %d), want project values", cfg.Sandbox.Memory, cfg.Sandbox.CPUs, cfg.Sandbox.Pids)
+		}
+	})
+}
+
+func TestLoadConfigWithUserImageRequiresUserImage(t *testing.T) {
+	withConfigDirs(t, strings.Join([]string{
+		"sandbox:",
+		"  environment:",
+		"    - FOO=user",
+		"",
+	}, "\n"), func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  image: alpine:3.22",
+			"",
+		}, "\n"))
+
+		_, err := loadConfigWithOptions(configLoadOptions{UserImage: true})
+		if err == nil {
+			t.Fatalf("loadConfigWithOptions() error = nil, want error")
+		}
+		if !strings.Contains(err.Error(), "--user-image requires sandbox.image") {
+			t.Fatalf("loadConfigWithOptions() error = %v, want user-image guidance", err)
+		}
+	})
+}
+
 func TestLoadConfigRejectsUnsupportedUserFields(t *testing.T) {
 	withConfigDirs(t, strings.Join([]string{
 		"sandbox:",
@@ -467,7 +552,7 @@ func TestCurrentVersionPrefersInjectedVersion(t *testing.T) {
 }
 
 func TestParseCLIArgsParsesSandboxFlagsBeforeCommand(t *testing.T) {
-	got, err := parseCLIArgs([]string{"--build", "--no-docker", "--read-only", "--offline", "claude", "--read-only"})
+	got, err := parseCLIArgs([]string{"--build", "--user-image", "--no-docker", "--read-only", "--offline", "claude", "--read-only"})
 	if err != nil {
 		t.Fatalf("parseCLIArgs() error = %v", err)
 	}
@@ -475,8 +560,8 @@ func TestParseCLIArgsParsesSandboxFlagsBeforeCommand(t *testing.T) {
 	if got.mode != cliModeSandbox {
 		t.Fatalf("parseCLIArgs() mode = %q, want %q", got.mode, cliModeSandbox)
 	}
-	if !got.build || !got.noDocker || !got.readOnly || !got.offline {
-		t.Fatalf("parseCLIArgs() flags = (%v, %v, %v, %v), want all true", got.build, got.noDocker, got.readOnly, got.offline)
+	if !got.build || !got.userImage || !got.noDocker || !got.readOnly || !got.offline {
+		t.Fatalf("parseCLIArgs() flags = (%v, %v, %v, %v, %v), want all true", got.build, got.userImage, got.noDocker, got.readOnly, got.offline)
 	}
 	if got.command != "claude" {
 		t.Fatalf("parseCLIArgs() command = %q, want %q", got.command, "claude")
@@ -896,7 +981,7 @@ func TestRunInspectPrintsResolvedConfig(t *testing.T) {
 		}, "\n"))
 
 		stdout, stderr := captureOutput(t, func() {
-			if code := runInspect(false, false, false); code != 0 {
+			if code := runInspect(false, false, false, false); code != 0 {
 				t.Fatalf("runInspect() = %d, want 0", code)
 			}
 		})
@@ -927,7 +1012,7 @@ func TestRunInspectOfflineReflectsEffectiveOverrides(t *testing.T) {
 		}, "\n"))
 
 		stdout, stderr := captureOutput(t, func() {
-			if code := runInspect(false, false, true); code != 0 {
+			if code := runInspect(false, false, true, false); code != 0 {
 				t.Fatalf("runInspect() = %d, want 0", code)
 			}
 		})

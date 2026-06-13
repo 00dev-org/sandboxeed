@@ -131,6 +131,9 @@ sandboxeed --build claude
 # Build the sandbox image only (no command)
 sandboxeed --build
 
+# Use your user-configured image instead of the project image for this run
+sandboxeed --user-image claude
+
 # Skip Docker-in-Docker for this run (if enabled)
 sandboxeed --no-docker claude
 
@@ -143,12 +146,13 @@ sandboxeed --cleanup
 
 ### Flags
 
-| Flag          | Description                                                                              |
-|---------------|------------------------------------------------------------------------------------------|
-| `--build`     | Build the Docker image (always `--no-cache`); if a command is provided, run it afterward |
-| `--no-docker` | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml`                 |
-| `--read-only` | Mount all volumes (including the project directory) as read-only inside the sandbox      |
-| `--unsafe`    | Run DinD in privileged mode (insecure, for testing only)                                 |
+| Flag           | Description                                                                                                                      |
+|----------------|----------------------------------------------------------------------------------------------------------------------------------|
+| `--build`      | Build the Docker image (always `--no-cache`); if a command is provided, run it afterward                                         |
+| `--user-image` | Use the image/build settings from `~/.sandboxeed/sandboxeed.yaml` instead of the project image, while keeping other merged config |
+| `--no-docker`  | Skip Docker-in-Docker even if `docker: true` is set in `sandboxeed.yaml`                                                         |
+| `--read-only`  | Mount all volumes (including the project directory) as read-only inside the sandbox                                              |
+| `--unsafe`     | Run DinD in privileged mode (insecure, for testing only)                                                                         |
 
 ### Built-in commands
 

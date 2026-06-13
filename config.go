@@ -55,11 +55,19 @@ type UserConfig struct {
 	Sandbox UserSandboxConfig `yaml:"sandbox"`
 }
 
+type configLoadOptions struct {
+	UserImage bool
+}
+
 func defaultConfig() *Config {
 	return &Config{}
 }
 
 func loadConfig() (*Config, error) {
+	return loadConfigWithOptions(configLoadOptions{})
+}
+
+func loadConfigWithOptions(opts configLoadOptions) (*Config, error) {
 	cfg := defaultConfig()
 
 	userPath, err := userConfigPath()
@@ -80,6 +88,9 @@ func loadConfig() (*Config, error) {
 		cfg.Sandbox.CPUs = strings.TrimSpace(userCfg.Sandbox.CPUs)
 		cfg.Sandbox.Pids = userCfg.Sandbox.Pids
 	}
+	if opts.UserImage && (!found || strings.TrimSpace(userCfg.Sandbox.Image) == "") {
+		return nil, fmt.Errorf("--user-image requires sandbox.image in %s", userPath)
+	}
 
 	projectCfg, found, err := loadProjectConfigFile(configFile)
 	if err != nil {
@@ -97,13 +108,15 @@ func loadConfig() (*Config, error) {
 	cfg.Sandbox.Volumes = mergeVolumeSpecs(cfg.Sandbox.Volumes, projectCfg.Sandbox.Volumes)
 	cfg.Sandbox.Environment = mergeEnvironment(cfg.Sandbox.Environment, projectCfg.Sandbox.Environment)
 	cfg.Sandbox.Domains = mergeDomains(cfg.Sandbox.Domains, projectCfg.Sandbox.Domains)
-	switch {
-	case strings.TrimSpace(projectCfg.Sandbox.Build.Dockerfile) != "":
-		cfg.Sandbox.Build = projectCfg.Sandbox.Build
-		cfg.Sandbox.Image = strings.TrimSpace(projectCfg.Sandbox.Image)
-	case strings.TrimSpace(projectCfg.Sandbox.Image) != "":
-		cfg.Sandbox.Build.Dockerfile = ""
-		cfg.Sandbox.Image = strings.TrimSpace(projectCfg.Sandbox.Image)
+	if !opts.UserImage {
+		switch {
+		case strings.TrimSpace(projectCfg.Sandbox.Build.Dockerfile) != "":
+			cfg.Sandbox.Build = projectCfg.Sandbox.Build
+			cfg.Sandbox.Image = strings.TrimSpace(projectCfg.Sandbox.Image)
+		case strings.TrimSpace(projectCfg.Sandbox.Image) != "":
+			cfg.Sandbox.Build.Dockerfile = ""
+			cfg.Sandbox.Image = strings.TrimSpace(projectCfg.Sandbox.Image)
+		}
 	}
 	if strings.TrimSpace(projectCfg.Sandbox.Memory) != "" {
 		cfg.Sandbox.Memory = strings.TrimSpace(projectCfg.Sandbox.Memory)
