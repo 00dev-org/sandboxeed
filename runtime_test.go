@@ -158,6 +158,34 @@ func TestRunArgsIncludesConfiguredOptions(t *testing.T) {
 	}
 }
 
+func TestInteractiveRunArgsIncludesInit(t *testing.T) {
+	got := interactiveRunArgs(RunOpts{Image: "alpine:3.22"})
+	want := []string{"run", "--rm", "-it", "--init", "alpine:3.22"}
+
+	if len(got) != len(want) {
+		t.Fatalf("interactiveRunArgs() len = %d, want %d\nargs = %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("interactiveRunArgs()[%d] = %q, want %q\nargs = %v", i, got[i], want[i], got)
+		}
+	}
+}
+
+func TestDetachedRunArgsOmitsInit(t *testing.T) {
+	got := detachedRunArgs(RunOpts{Image: "alpine:3.22"})
+	want := []string{"run", "-d", "alpine:3.22"}
+
+	if len(got) != len(want) {
+		t.Fatalf("detachedRunArgs() len = %d, want %d\nargs = %v", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("detachedRunArgs()[%d] = %q, want %q\nargs = %v", i, got[i], want[i], got)
+		}
+	}
+}
+
 func TestManagedLabelsIncludesExpectedValues(t *testing.T) {
 	got := managedLabels("demo", "proxy")
 

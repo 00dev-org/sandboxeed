@@ -27,22 +27,22 @@ type NetworkAttachment struct {
 
 // RunOpts holds options for running a container.
 type RunOpts struct {
-	Name       string
-	Networks   []NetworkAttachment
-	Volumes    []string
-	Env        []string
-	Labels     map[string]string
-	WorkDir    string
-	Image      string
-	Cmd        []string
+	Name        string
+	Networks    []NetworkAttachment
+	Volumes     []string
+	Env         []string
+	Labels      map[string]string
+	WorkDir     string
+	Image       string
+	Cmd         []string
 	Privileged  bool
 	CapAdd      []string // passed as --cap-add (e.g. "SYS_ADMIN")
 	Devices     []string // passed as --device (e.g. "/dev/fuse")
 	SecurityOpt []string // passed as --security-opt (e.g. "seccomp=unconfined")
 	User        string   // passed as --user (e.g. "1000:1000")
-	Memory     string
-	CPUs       string
-	PidsLimit  int
+	Memory      string
+	CPUs        string
+	PidsLimit   int
 }
 
 // ContainerRuntime abstracts container engine operations.
@@ -95,7 +95,7 @@ func (d *DockerCLI) RunDetached(opts RunOpts) error {
 		runOpts.Networks = []NetworkAttachment{opts.Networks[0]}
 	}
 
-	args := append([]string{"run", "-d"}, runArgs(runOpts)...)
+	args := detachedRunArgs(runOpts)
 	if err := exec.CommandContext(d.ctx, d.command(), args...).Run(); err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func (d *DockerCLI) RunDetached(opts RunOpts) error {
 }
 
 func (d *DockerCLI) RunInteractive(opts RunOpts) error {
-	args := append([]string{"run", "--rm", "-it"}, runArgs(opts)...)
+	args := interactiveRunArgs(opts)
 	cmd := exec.CommandContext(d.ctx, d.command(), args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
@@ -273,6 +273,14 @@ func removeContainerArgs(binary string, name string) []string {
 	}
 	args = append(args, name)
 	return args
+}
+
+func detachedRunArgs(opts RunOpts) []string {
+	return append([]string{"run", "-d"}, runArgs(opts)...)
+}
+
+func interactiveRunArgs(opts RunOpts) []string {
+	return append([]string{"run", "--rm", "-it", "--init"}, runArgs(opts)...)
 }
 
 func runArgs(opts RunOpts) []string {
