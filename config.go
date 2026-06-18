@@ -57,6 +57,7 @@ type UserConfig struct {
 
 type configLoadOptions struct {
 	UserImage bool
+	Profile   string
 }
 
 func defaultConfig() *Config {
@@ -70,7 +71,7 @@ func loadConfig() (*Config, error) {
 func loadConfigWithOptions(opts configLoadOptions) (*Config, error) {
 	cfg := defaultConfig()
 
-	userPath, err := userConfigPath()
+	userPath, err := userConfigPath(opts.Profile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve home directory: %w", err)
 	}
@@ -136,12 +137,19 @@ func loadConfigWithOptions(opts configLoadOptions) (*Config, error) {
 	return cfg, nil
 }
 
-func userConfigPath() (string, error) {
+func userConfigDirName(profile string) string {
+	if profile != "" {
+		return ".sandboxeed-" + profile
+	}
+	return userConfigDir
+}
+
+func userConfigPath(profile string) (string, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(homeDir, userConfigDir, userConfigFile), nil
+	return filepath.Join(homeDir, userConfigDirName(profile), userConfigFile), nil
 }
 
 func loadProjectConfigFile(path string) (*Config, bool, error) {

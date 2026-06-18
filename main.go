@@ -47,7 +47,7 @@ func printHelp() {
 	fmt.Printf(`sandboxeed
 
 Usage:
-  sandboxeed [--build] [--user-image] [--no-docker] [--read-only] [--offline] [--unsafe] [command] [args...]
+  sandboxeed [--build] [--user-image] [--no-docker] [--read-only] [--offline] [--unsafe] [--profile name] [command] [args...]
   sandboxeed --help
   sandboxeed --version
   sandboxeed --inspect
@@ -62,10 +62,11 @@ Flags:
   --read-only   Mount all volumes as read-only inside the sandbox.
   --offline     Force no outbound network for this run and skip proxy startup.
   --unsafe      Run DinD in privileged mode (insecure, for testing only).
+  --profile     Use ~/.sandboxeed-<name> instead of ~/.sandboxeed for user config.
   --help        Show this help text.
   --version     Print the app version.
   --inspect     Print the effective sandbox configuration.
-  --config      Open ~/.sandboxeed/sandboxeed.yaml in the system editor.
+  --config      Open ~/.sandboxeed/sandboxeed.yaml (or profile-specific config) in the system editor.
   --cleanup     List and remove sandboxeed containers, networks, and volumes (with confirmation).
   --self-update   Download and replace this binary with the latest release.
 `)
@@ -91,6 +92,7 @@ type cliOptions struct {
 	readOnly  bool
 	offline   bool
 	unsafe    bool
+	profile   string
 	command   string
 	args      []string
 	extraArgs []string
@@ -106,6 +108,7 @@ func parseCLIArgs(argv []string) (cliOptions, error) {
 	fs.BoolVar(&opts.readOnly, "read-only", false, "")
 	fs.BoolVar(&opts.offline, "offline", false, "")
 	fs.BoolVar(&opts.unsafe, "unsafe", false, "")
+	fs.StringVar(&opts.profile, "profile", "", "")
 
 	help := fs.Bool("help", false, "")
 	fs.BoolVar(help, "h", false, "")
@@ -176,10 +179,10 @@ func run() int {
 		return runCleanup()
 	}
 	if opts.mode == cliModeConfig {
-		return runConfig()
+		return runConfigWithProfile(opts.profile)
 	}
 	if opts.mode == cliModeInspect {
-		return runInspect(opts.noDocker, opts.readOnly, opts.offline, opts.userImage)
+		return runInspect(opts.noDocker, opts.readOnly, opts.offline, opts.userImage, opts.profile)
 	}
 	if opts.mode == cliModeSelfUpdate {
 		return runSelfUpdate()
@@ -187,7 +190,7 @@ func run() int {
 
 	maybeNotifyUpdate()
 
-	cfg, err := loadConfigWithOptions(configLoadOptions{UserImage: opts.userImage})
+	cfg, err := loadConfigWithOptions(configLoadOptions{UserImage: opts.userImage, Profile: opts.profile})
 	if err != nil {
 		stderrf("failed to load config: %v\n", err)
 		return 1
@@ -331,8 +334,8 @@ func run() int {
 	return 0
 }
 
-func runInspect(noDocker, readOnly, offline, userImage bool) int {
-	cfg, err := loadConfigWithOptions(configLoadOptions{UserImage: userImage})
+func runInspect(noDocker, readOnly, offline, userImage bool, profile string) int {
+	cfg, err := loadConfigWithOptions(configLoadOptions{UserImage: userImage, Profile: profile})
 	if err != nil {
 		stderrf("failed to load config: %v\n", err)
 		return 1
@@ -357,8 +360,8 @@ func runInspect(noDocker, readOnly, offline, userImage bool) int {
 	return 0
 }
 
-func runConfig() int {
-	path, err := userConfigPath()
+func runConfigWithProfile(profile string) int {
+	path, err := userConfigPath(profile)
 	if err != nil {
 		stderrf("failed to resolve home directory: %v\n", err)
 		return 1

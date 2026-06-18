@@ -689,6 +689,122 @@ func TestParseCLIArgsKeepsAllTokensAfterBuiltInWithBuiltIn(t *testing.T) {
 	}
 }
 
+func TestParseCLIArgsParsesProfileFlag(t *testing.T) {
+	got, err := parseCLIArgs([]string{"--profile", "work", "bash"})
+	if err != nil {
+		t.Fatalf("parseCLIArgs() error = %v", err)
+	}
+	if got.profile != "work" {
+		t.Fatalf("parseCLIArgs() profile = %q, want %q", got.profile, "work")
+	}
+	if got.command != "bash" {
+		t.Fatalf("parseCLIArgs() command = %q, want %q", got.command, "bash")
+	}
+}
+
+func TestParseCLIArgsProfileDefaultsEmpty(t *testing.T) {
+	got, err := parseCLIArgs([]string{"bash"})
+	if err != nil {
+		t.Fatalf("parseCLIArgs() error = %v", err)
+	}
+	if got.profile != "" {
+		t.Fatalf("parseCLIArgs() profile = %q, want empty", got.profile)
+	}
+}
+
+func TestUserConfigDirNameDefault(t *testing.T) {
+	if got := userConfigDirName(""); got != ".sandboxeed" {
+		t.Fatalf("userConfigDirName(\"\") = %q, want %q", got, ".sandboxeed")
+	}
+}
+
+func TestUserConfigDirNameWithProfile(t *testing.T) {
+	if got := userConfigDirName("work"); got != ".sandboxeed-work" {
+		t.Fatalf("userConfigDirName(\"work\") = %q, want %q", got, ".sandboxeed-work")
+	}
+}
+
+func TestUserConfigPathWithProfile(t *testing.T) {
+	t.Setenv("HOME", "/home/testuser")
+	got, err := userConfigPath("work")
+	if err != nil {
+		t.Fatalf("userConfigPath() error = %v", err)
+	}
+	want := filepath.Join("/home/testuser", ".sandboxeed-work", "sandboxeed.yaml")
+	if got != want {
+		t.Fatalf("userConfigPath(\"work\") = %q, want %q", got, want)
+	}
+}
+
+func TestLoadConfigWithProfileUsesProfileDir(t *testing.T) {
+	profileConfig := strings.Join([]string{
+		"sandbox:",
+		"  image: profile-image:latest",
+		"  volumes:",
+		"    - ~/.gitconfig:/home/node/.gitconfig:ro",
+		"  environment:",
+		"    - FOO=profile",
+		"  domains:",
+		"    - profile.example.com",
+		"  memory: 512m",
+		"",
+	}, "\n")
+
+	withConfigDirs(t, "", func(projectDir, homeDir string) {
+		// Write project config
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  image: project-image:latest",
+			"",
+		}, "\n"))
+
+		// Write profile config
+		writeFile(t, filepath.Join(homeDir, ".sandboxeed-myprofile", userConfigFile), profileConfig)
+
+		cfg, err := loadConfigWithOptions(configLoadOptions{Profile: "myprofile"})
+		if err != nil {
+			t.Fatalf("loadConfigWithOptions() error = %v", err)
+		}
+		// Project image takes precedence over profile/user image
+		if cfg.Sandbox.Image != "project-image:latest" {
+			t.Fatalf("loadConfigWithOptions() image = %q, want %q", cfg.Sandbox.Image, "project-image:latest")
+		}
+		// Profile user config values (volumes, env, domains, memory) are merged
+		found := false
+		for _, v := range cfg.Sandbox.Volumes {
+			if strings.Contains(v, ".gitconfig") {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("loadConfigWithOptions() volumes missing profile volume, got %v", cfg.Sandbox.Volumes)
+		}
+		if cfg.Sandbox.Memory != "512m" {
+			t.Fatalf("loadConfigWithOptions() memory = %q, want %q", cfg.Sandbox.Memory, "512m")
+		}
+	})
+}
+
+func TestLoadConfigWithProfileFallsBackToDefault(t *testing.T) {
+	withConfigDirs(t, "", func(projectDir, homeDir string) {
+		writeFile(t, filepath.Join(projectDir, configFile), strings.Join([]string{
+			"sandbox:",
+			"  image: project-image:latest",
+			"",
+		}, "\n"))
+
+		// No profile dir exists - should fall back to project config only
+		cfg, err := loadConfigWithOptions(configLoadOptions{Profile: "nonexistent"})
+		if err != nil {
+			t.Fatalf("loadConfigWithOptions() error = %v", err)
+		}
+		if cfg.Sandbox.Image != "project-image:latest" {
+			t.Fatalf("loadConfigWithOptions() image = %q, want %q", cfg.Sandbox.Image, "project-image:latest")
+		}
+	})
+}
+
 func TestConfigEditorArgsPrefersVisualThenEditorThenVi(t *testing.T) {
 	path := "/tmp/.sandboxeed/sandboxeed.yaml"
 
@@ -981,7 +1097,7 @@ func TestRunInspectPrintsResolvedConfig(t *testing.T) {
 		}, "\n"))
 
 		stdout, stderr := captureOutput(t, func() {
-			if code := runInspect(false, false, false, false); code != 0 {
+			if code := runInspect(false, false, false, false, ""); code != 0 {
 				t.Fatalf("runInspect() = %d, want 0", code)
 			}
 		})
@@ -1012,7 +1128,7 @@ func TestRunInspectOfflineReflectsEffectiveOverrides(t *testing.T) {
 		}, "\n"))
 
 		stdout, stderr := captureOutput(t, func() {
-			if code := runInspect(false, false, true, false); code != 0 {
+			if code := runInspect(false, false, true, false, ""); code != 0 {
 				t.Fatalf("runInspect() = %d, want 0", code)
 			}
 		})
